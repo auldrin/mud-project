@@ -4,13 +4,11 @@ import time, random, socket, select
 HOST = socket.gethostbyname(socket.gethostname())
 PORT = 1024
 
-CLIENT_MESSAGE_MAX = 50
-SERVER_MESSAGE_MAX = 200
+HEADER_LENGTH = 10
 
 class Player:
-    def __init__(self, conn):
-        self.sock = conn
-        self.initialized = False
+    def __init__(self):
+        self.initialized = 0
         self.name = ''
 
 
@@ -38,9 +36,20 @@ class Server:
             return False
 
 def send(sock,msg):
-    msg = bytes(pad(msg),'utf-8')
+    #convert to bytes
+    msg = bytes(msg,'utf-8')
+
+    #assemble fixed length header
+    length = bytes(str(len(msg)),'utf-8')
+    pad = HEADER_LENGTH-len(length)
+    if pad >= 1:
+        length = length + b' '*pad
+
+    #attach header
+    msg = length+msg
+
     totalsent = 0
-    while totalsent < SERVER_MESSAGE_MAX:
+    while totalsent < len(msg):
         sent = sock.send(msg[totalsent:])
         if sent == 0:
             raise RuntimeError('socket connection broken')
@@ -49,35 +58,44 @@ def send(sock,msg):
 def receive(sock):
     chunks = []
     bytes_recd = 0
-    while bytes_recd < CLIENT_MESSAGE_MAX:
-        chunk = sock.recv(min(CLIENT_MESSAGE_MAX - bytes_recd, 2048))
+    #receive header
+    while bytes_recd < HEADER_LENGTH:
+        chunk = sock.recv(min(HEADER_LENGTH - bytes_recd, HEADER_LENGTH))
+        if chunk == b'':
+            raise RuntimeError('Socket closed during reading')
+        chunks.append(chunk)
+        bytes_recd = bytes_recd + len(chunk)
+    #reassemble and decode header
+    header = b''.join(chunks)
+    length = int(str(header,'utf-8'))
+
+    chunks = []
+    bytes_recd = 0
+    #receive body
+    while bytes_recd < length:
+        chunk = sock.recv(min(length - bytes_recd, length))
         if chunk == b'':
             raise RuntimeError('Socket closed during reading')
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
     return b''.join(chunks)
 
-def pad(msg):
-    if len(msg) < SERVER_MESSAGE_MAX:
-        return msg + ('`' * (SERVER_MESSAGE_MAX - len(msg)))
-
 def handleRequest(msg):
     msg = str(msg,'utf-8')
-    msg = msg.replace('`','')
     msg = msg.split()
     #TODO: replace this if with an actual input handler
     if msg[0].lower() == 'chat':
+        msg = ' '.join(msg)
         msg = msg[4:]
-        msg = 'Chat:' + msg
-        print('Player chatting: ',msg)
+        msg = 'Chat: ' + msg
+        print(msg)
         for client in clients:
             if isinstance(client,Server):
                 continue
             send(client,msg)
 
-
-
 lastTime = time.time()
+players = {}
 clients = [Server()]
 
 while True:
