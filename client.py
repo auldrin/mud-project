@@ -63,15 +63,38 @@ def receive(sock):
     return b''.join(chunks)
 
 def handle_enter(event):
+    global textCursor
     text = textInput.get()
     textInput.delete(0,tk.END)
     output.insert(tk.INSERT,'\n'+text)
     send(server.sock,text)
+    textHistory.append(text)
+    textCursor = 0
+
+def history_up(event):
+    global textCursor
+    textCursor = textCursor-1
+    textInput.delete(0,tk.END)
+    try:
+        textInput.insert(tk.INSERT,textHistory[textCursor])
+    except:
+        textCursor = textCursor+1
+        textInput.insert(tk.INSERT,textHistory[textCursor])
+
+def history_down(event):
+    global textCursor
+    textCursor = min(0,textCursor + 1)
+    textInput.delete(0,tk.END)
+    if textCursor != 0:
+        textInput.insert(tk.INSERT,textHistory[textCursor])
 
 
 window = tk.Tk()
 window.title("My Application")
 window.bind('<Return>',handle_enter)
+window.bind('<Up>',history_up)
+window.bind('<Down>',history_down)
+
 
 
 output = tk.Text(window,background='black',foreground='yellow',width = 100,height=50)
@@ -88,6 +111,9 @@ window.update()
 server = Server()
 output.insert(tk.INSERT, "\nConnecting to server...")
 window.update()
+textHistory = []
+textCursor = 0
+textInput.focus()
 while True:
     try:
         server.connect(HOST,PORT)
