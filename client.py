@@ -1,12 +1,9 @@
-import socket, select, time, tkinter as tk
+import socket, select, sys, tkinter as tk
 
 
 HOST = '192.168.2.15'
 PORT = 1024
 HEADER_LENGTH = 10
-
-CLIENT_MESSAGE_MAX = 50
-SERVER_MESSAGE_MAX = 200
 
 class Server:
     def __init__(self):
@@ -88,14 +85,16 @@ def history_down(event):
     if textCursor != 0:
         textInput.insert(tk.INSERT,textHistory[textCursor])
 
+def on_close():
+    window.destroy()
+
 
 window = tk.Tk()
-window.title("My Application")
+window.title("PyMUD2021 Client")
 window.bind('<Return>',handle_enter)
 window.bind('<Up>',history_up)
 window.bind('<Down>',history_down)
-
-
+window.protocol("WM_DELETE_WINDOW", on_close)
 
 output = tk.Text(window,background='black',foreground='yellow',width = 100,height=50)
 output.insert(tk.INSERT, "Welcome to the videogames")
@@ -114,6 +113,7 @@ window.update()
 textHistory = []
 textCursor = 0
 textInput.focus()
+
 while True:
     try:
         server.connect(HOST,PORT)
@@ -125,19 +125,13 @@ while True:
         window.update()
         continue
 
-lastTime = time.time()
 while True:
-    if time.time() - lastTime < 0.01:
-        continue
-    else:
-        lastTime = time.time()
-
     incoming,outgoing,error = select.select([server.sock],[server.sock],[server.sock])
     if incoming:
         output.insert(tk.INSERT, '\n'+str(receive(server.sock),'utf-8'))
 
-
     window.update_idletasks()
     window.update()
+
 
 

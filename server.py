@@ -6,23 +6,32 @@ HOST = socket.gethostbyname(socket.gethostname())
 PORT = 1024
 
 HEADER_LENGTH = 10
-IDLE_TIMER = 10
+IDLE_TIMER = 15
 
 db = mysql.connector.connect(host='localhost',user='root',password='admin',database="mydatabase")
 cursor = db.cursor()
 
 class Rooms(Enum):
-        ID = 0
-        NAME = 1
-        EAST = 2
-        WEST = 3
-        NORTH = 4
-        SOUTH = 5
-        UP = 6
-        DOWN = 7
-        DESCRIPTION = 8
-    #def get(number):
-    #    return self[number].name
+    ID = 0
+    NAME = 1
+    EAST = 2
+    WEST = 3
+    NORTH = 4
+    SOUTH = 5
+    UP = 6
+    DOWN = 7
+    DESCRIPTION = 8
+    def get(self,number):
+        return self[number].name
+
+class Players(Enum):
+    ID = 0
+    NAME = 1
+    PASSWORD = 2
+    LOCATION = 3
+
+    def get(number):
+        return self[number].name
 
 class Player:
     def __init__(self,name):
@@ -30,6 +39,9 @@ class Player:
         self.db = None
         self.verified = True
         self.timer = 0.0
+
+    def update(self,cursor):
+        cursor.execute('UPDATE players SET location = %s',(self.db[Players.LOCATION.value],))
 
 class Server:
     def __init__(self):
@@ -156,6 +168,12 @@ def handleRequest(msg,player): #TODO handleRequest should return a tuple or some
             if isinstance(client,Server):
                 continue
             send(client,msg)
+    elif msg[0].lower() == 'look':
+        for client in connections:
+            if isinstance(client,Server):
+                continue
+            send(client,look(player.db[Players.LOCATION.value]))
+
 
 def look(room):
     cursor.execute("SELECT * FROM rooms WHERE id = %s;",(room,))
@@ -166,59 +184,85 @@ def look(room):
             directions.append(ROOMS.get(x))
     return result[Rooms.NAME.value] +'\n'+ result[Rooms.DESCRIPTION.value] + '\n' + 'Valid directions: ' + ','.join(directions)
 
-lastTime = time.time()
+
 connections = {Server():None}
+loosePlayers = []
+idlePlayers = []
+
+previousFrame = time.time()
+reportTime = 0
 
 while True:
-    timePassed = time.time() - lastTime
-    idlePlayers = []
-    if timePassed < 0.1:
-        continue
-    else:
-        lastTime = time.time()
-        for conn in connections:
-            if not isinstance(conn,Server):
-                try:
-                    connections[conn][3] = connections[conn][3] + timePassed
-                    if connections[conn][3] > IDLE_TIMER:
-                        idlePlayers.append(conn)
-                except TypeError:
-                    connections[conn].timer = connections[conn].timer
-                    if connections[conn].timer > IDLE_TIMER:
-                        idlePlayers.append(conn)
-        for conn in idlePlayers:
-            try:
-                send(conn,'You are being disconnected for inactivity, sorry!')
-            finally:
-                print('Disconnected player due to inactivity')
-                #TODO: Put player's data into database before deleting them
-                connections.pop(conn)
+    timeSinceFrame = time.time() - previousFrame
+    previousFrame = time.time()
+    #TODO figure out why nobody is timing out anymore
+    for conn in connections: #Collect any idle connected players, put them in idlePlayers, but do not remove them from connections list
+        if isinstance(conn,Server):
+            continue
+        try:
+            timer = connections[conn][3] + timeSinceFrame
+            connections[conn][3] = timer
+        except TypeError:
+            timer = connections[conn].timer + timeSinceFrame
+            connections[conn].timer = timer
+        if timer > IDLE_TIMER:
+            idlePlayers.append(conn)
+            print('Disconnecting idle player, idle for ',timer,' seconds.')
+
+    while len(idlePlayers): #Purge the list
+        try: #Try to treat them like real players, which will fail if they're unverified.
+            connections[idlePlayers[0]].update(cursor)
+            db.commit()
+            print('Player saved to database')
+        except AttributeError:
+            print('Unverified player, not saved to database')
+            pass
+        finally:
+            connections.pop(idlePlayers[0])
+            idlePlayers.pop(0)
+
+    i = 0
+    while i < len(loosePlayers): #Collect any idle disconnected players, put them in idlePlayers, remove from loosePlayers
+        loosePlayers[i].timer = loosePlayers[i].timer + timeSinceFrame
+        if loosePlayers[i].timer > IDLE_TIMER:
+            print('Purging loose player, idle for ',connections[conn][3],' seconds')
+            idlePlayers.append(loosePlayers[i])
+            loosePlayers.pop(i)
+        else:
+            i = i + 1
+
+    while len(idlePlayers):
+        idlePlayers[0].update(cursor)
+        db.commit()
+        idlePlayers.pop(0)
+        print('Idle player saved to database')
+
+
 
     incomingS, outgoingS, errorS = select.select(connections.keys(),connections.keys(),connections.keys(),0.05)
     for client in incomingS:
         if isinstance(client,Server):#If the 'client' is really the server socket,accept the connection and add an entry to connections
             if client.accept():
-                #Authentication tuple will be used to store username, password, and password confirmation (if new account)
+                #Authentication list is used to store username, password, password confirmation (if new account), and timeout timer
                 connections[client.conn] = [0,0,1,0]
                 send(client.conn,"Enter username:")
+            continue
 
         else: #If it's an actual player, handle the incoming data
             try:
                 data = receive(client)
             except:
                 print('Disconnected player due to exception when receiving data')
-                #TODO: Don't immediately remove player, dropping to escape consequences isn't cool
+                if isinstance(connections[client],Player):
+                    loosePlayers.append(connections[client])
+                    print('Added player to loosePlayers list')
                 connections.pop(client)
-
-            try:
-                connections[client]
-                pass
-            except KeyError:
-                print('Key no longer matches, discard')
                 continue
+
             #If the player is fully logged in, handle their request like normal
             if isinstance(connections[client],Player):
                 connections[client].timer = 0.0
+                #TODO: Split handleRequest into a parser and something which enacts them
                 handleRequest(data,(connections[client]))
             else: #Otherwise, call verification to collect the information they've provided
                 connections[client][3] = 0.0
