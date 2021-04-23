@@ -12,6 +12,12 @@ class Server:
     def connect(self, host, port):
         self.sock.connect((host,port))
 
+    def settimeout(self, time):
+        self.sock.settimeout(time)
+
+    def re_init(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
 def send(sock,msg):
     #convert to bytes
     msg = bytes(msg,'utf-8')
@@ -31,7 +37,6 @@ def send(sock,msg):
         if sent == 0:
             raise RuntimeError('socket connection broken')
         totalsent = totalsent + sent
-    print(str(msg,'utf-8'))
 
 def receive(sock):
     chunks = []
@@ -46,7 +51,6 @@ def receive(sock):
     #reassemble and decode header
     header = b''.join(chunks)
     length = int(str(header,'utf-8'))
-    print('Received header: ',length)
 
     chunks = []
     bytes_recd = 0
@@ -57,7 +61,7 @@ def receive(sock):
             raise RuntimeError('Socket closed during reading')
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
-    return b''.join(chunks)
+    return str(b''.join(chunks),'utf-8')
 
 def handle_enter(event):
     global textCursor
@@ -115,23 +119,32 @@ textCursor = 0
 textInput.focus()
 
 while True:
-    try:
-        server.connect(HOST,PORT)
-        output.insert(tk.INSERT, "\nConnected successfully.")
-        window.update()
-        break
-    except:
-        output.insert(tk.INSERT, "\nFailed to connect, retrying")
-        window.update()
-        continue
+    while True:
+        try:
+            server.settimeout(0.05)
+            server.connect(HOST,PORT)
+            output.insert(tk.INSERT, "\nConnected successfully.")
+            window.update()
+            server.settimeout(None)
+            break
+        except (socket.timeout,ConnectionRefusedError):
+            server.re_init()
+            window.update()
+            continue
 
-while True:
-    incoming,outgoing,error = select.select([server.sock],[server.sock],[server.sock])
-    if incoming:
-        output.insert(tk.INSERT, '\n'+str(receive(server.sock),'utf-8'))
+    print('Entering main loop')
+    while True:
+        incoming,outgoing,error = select.select([server.sock],[server.sock],[server.sock])
+        if incoming:
+            try:
+                output.insert(tk.INSERT, '\n'+receive(server.sock))
+            except ConnectionResetError:
+                output.insert(tk.INSERT, '\nConnection reset by server, attempting to reconnect')
+                server.re_init()
+                break
 
-    window.update_idletasks()
-    window.update()
+        window.update_idletasks()
+        window.update()
 
 
 

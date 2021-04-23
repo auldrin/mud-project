@@ -6,7 +6,7 @@ HOST = socket.gethostbyname(socket.gethostname())
 PORT = 1024
 
 HEADER_LENGTH = 10
-IDLE_TIMER = 15
+IDLE_TIMER = 300
 
 db = mysql.connector.connect(host='localhost',user='root',password='admin',database="mydatabase")
 cursor = db.cursor()
@@ -275,7 +275,7 @@ while True:
                     send(client,look(connections[client].db[3]))
                     #TODO: Check if player is already in-game, and transfer them to the new connection. Or just put them back in DB and re-check-out.
                 elif connections[client][0] != 0 and connections[client][1] != 0 and connections[client][2] != 0: #A new player looks like ['Auldrin',admin,admin]
-                    cursor.execute("INSERT INTO players (name, password) VALUES (%s, %s)",(connections[client][0],connections[client][1]))
+                    cursor.execute("INSERT INTO players (name, password, location) VALUES (%s, %s, %s)",(connections[client][0],connections[client][1]))
                     db.commit()
                     connections[client] = Player(connections[client][0])
                     cursor.execute("SELECT * FROM players WHERE name = %s;", (connections[client].name,))
