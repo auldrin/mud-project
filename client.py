@@ -45,7 +45,7 @@ def receive(sock):
     while bytes_recd < HEADER_LENGTH:
         chunk = sock.recv(min(HEADER_LENGTH - bytes_recd, HEADER_LENGTH))
         if chunk == b'':
-            raise RuntimeError('Socket closed during reading')
+            raise ConnectionResetError('Socket closed during reading')
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
     #reassemble and decode header
@@ -58,7 +58,7 @@ def receive(sock):
     while bytes_recd < length:
         chunk = sock.recv(min(length - bytes_recd, length))
         if chunk == b'':
-            raise RuntimeError('Socket closed during reading')
+            raise ConnectionResetError('Socket closed during reading')
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
     return str(b''.join(chunks),'utf-8')
@@ -142,11 +142,13 @@ while True:
         if incoming:
             try:
                 output.insert(tk.INSERT, '\n'+receive(server.sock))
-            except ConnectionResetError:
+            except (ConnectionResetError):
                 output.insert(tk.INSERT, '\nConnection reset by server, attempting to reconnect')
                 server.re_init()
                 server.settimeout(0.05)
                 break
+        elif error:
+            print('Shit\'s fucked')
         window.update_idletasks()
         window.update()
 
