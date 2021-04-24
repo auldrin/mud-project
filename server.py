@@ -183,10 +183,12 @@ def parseCommand(msg):
         return 'say'
     elif msg in 'dig':
         return 'dig'
+    elif msg in 'tele':
+        return 'tele'
     else:
         return ''
 
-def look(playerSocket,player,room):
+def look(player,room):
     directions = []
     players = []
     for x in range(2,7):
@@ -199,7 +201,7 @@ def look(playerSocket,player,room):
             continue
         message += ''.join(('\n',p.name,' is standing here.'))
     message += '\nValid directions: ' + ','.join(directions)
-    send(playerSocket,message)
+    send(player.conn,message)
 
 def chat(connectionList,player,message):
     while message[0] != ' ':
@@ -211,17 +213,17 @@ def chat(connectionList,player,message):
         except AttributeError: #Will always happen when the server tries to send to itself.
             continue
 
-def enterRoom(playerSocket,player,room,direction=None):
+def enterRoom(player,room,direction=None):
     player.location = room.db[REnum.ID.value]
     room.playerList.append(player)
-    look(playerSocket,player,room)
+    look(player,room)
     message = player.name + ' has arrived from '
     if direction:
         message += 'the ' + direction
     else:
         message += 'nowhere.'
     room.broadcast(message,player)
-    #TODO: broadcast the player arriving to the room, using direction if possible to say which way they came from
+
 
 def leaveRoom(player,room,direction=None):
     room.playerList.remove(player)
@@ -231,7 +233,6 @@ def leaveRoom(player,room,direction=None):
     else:
         message += ' has vanished.'
     room.broadcast(message)
-    #TODO: Broadcast the player leaving to the room, using direction if possible to say which way they went
 
 def say(player,room,message):
     while message[0] != ' ':
@@ -243,7 +244,7 @@ def say(player,room,message):
 def dig(room,message,cursor):
     mList = message.split()
     d = mList[1]
-    name = mList[2]
+    name = ''.join(mList[2:])
     desc = 'Default description'
     west, east, south, north, up, down = None, None, None, None, None, None
     if d == 'east':
@@ -267,7 +268,15 @@ def dig(room,message,cursor):
     cursor.execute('SELECT * FROM rooms WHERE id = %s',(room.db[REnum.ID.value],))
     room.db = cursor.fetchone()
 
-
+def tele(message,player, rooms):
+    target = int(message.split()[1])
+    try:
+        target = rooms[target]
+    except KeyError:
+        send(player.conn,'Room does not exist')
+        return
+    leaveRoom(player,rooms[player.location])
+    enterRoom(player,target)
 
 connections = {Server():None}
 loosePlayers = []
@@ -279,6 +288,7 @@ cursor.execute('SELECT * FROM rooms')
 result = cursor.fetchall()
 for roomEntry in result:
     rooms[roomEntry[REnum.ID.value]] = Room(roomEntry)
+print (rooms)
 #####
 
 previousFrame = time.time()
@@ -361,11 +371,13 @@ while True:
             if command == 'chat':
                 chat(connections,connections[client],data)
             elif command == 'look':
-                look(client,connections[client],rooms[connections[client].location])
+                look(connections[client],rooms[connections[client].location])
             elif command == 'say':
                 say(connections[client],rooms[connections[client].location],data)
             elif command == 'dig':
                 dig(rooms[connections[client].location],data,cursor)
+            elif command == 'tele':
+                tele(data,connections[client],rooms)
             continue
         ###################################################################
         #If the player is unverified, attempt to verify using the new data
@@ -375,7 +387,7 @@ while True:
             connections[client] = Player(connections[client][0],client) #Make a new player with the verified name
             connections[client].download(cursor)
             print('Verified existing player '+connections[client].name)
-            enterRoom(client,connections[client],rooms[connections[client].location])
+            enterRoom(connections[client],rooms[connections[client].location])
             #TODO: Check if player is already in-game, and transfer them to the new connection. Or just put them back in DB and re-check-out.
         elif connections[client][0] != 0 and connections[client][1] != 0 and connections[client][2] != 0: #A new player looks like ['Auldrin',admin,admin,0]
             cursor.execute("INSERT INTO players (name, password, location) VALUES (%s, %s, %s)",(connections[client][0].capitalize(),connections[client][1],1))
@@ -383,7 +395,7 @@ while True:
             connections[client] = Player(connections[client][0],client)
             connections[client].download(cursor)
             print('Verified new player ',connections[client].name)
-            enterRoom(client,connections[client],rooms[connections[client].location])
+            enterRoom(connections[client],rooms[connections[client].location])
 
 
 
