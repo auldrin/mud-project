@@ -6,7 +6,7 @@ HOST = socket.gethostbyname(socket.gethostname())
 PORT = 1024
 
 HEADER_LENGTH = 10
-IDLE_TIMER = 300
+IDLE_TIMER = 150
 
 db = mysql.connector.connect(host='localhost',user='root',password='admin',database="mydatabase")
 cursor = db.cursor()
@@ -42,6 +42,13 @@ class Player:
 
     def update(self,cursor):
         cursor.execute('UPDATE players SET location = %s',(self.db[Players.LOCATION.value],))
+
+    def download(self,cursor):
+        cursor.execute("SELECT * FROM players WHERE name = %s",(self.name,))
+        self.db = cursor.fetchone()
+        self.name = self.db[Players.NAME.value]
+        self.location = self.db[Players.LOCATION.value]
+
 
 class Server:
     def __init__(self):
@@ -110,10 +117,9 @@ def receive(sock):
             raise RuntimeError('Socket closed during reading')
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
-    return b''.join(chunks)
+    return str(b''.join(chunks),'utf-8')
 
 def verification(msg,player):
-    msg = str(msg,'utf-8')
     verification = player[1]
     connection = player[0]
     #If player[1] is a list, this will work and progress through authentication. If it is not, it will except
@@ -154,36 +160,36 @@ def verification(msg,player):
             verification[1] = 0
     return verification
 
+def parseCommand(msg):
+    #replace this with a tuple iterator for the love of god
+    msg = msg.split()[0]
+    if msg in 'look':
+        return 'look'
+    elif msg in 'chat':
+        return 'chat'
+    elif msg in 'say':
+        return 'say'
+    else:
+        return ''
 
-def handleRequest(msg,player): #TODO handleRequest should return a tuple or something of the command and its targets, so another function can execute it
-    msg = str(msg,'utf-8')
-    #TODO: replace this if with an actual input handler
-    msg = msg.split()
-    if msg[0].lower() == 'chat':
-        msg = ' '.join(msg)
-        msg = msg[4:]
-        msg = '[chat]'+ player.name+ ':' + msg
-        print(msg)
-        for client in connections:
-            if isinstance(client,Server):
-                continue
-            send(client,msg)
-    elif msg[0].lower() == 'look':
-        for client in connections:
-            if isinstance(client,Server):
-                continue
-            send(client,look(player.db[Players.LOCATION.value]))
-
-
-def look(room):
+def look(playerSocket,player,room):
     cursor.execute("SELECT * FROM rooms WHERE id = %s;",(room,))
     result = cursor.fetchone()
     directions = []
     for x in range(2,7):
         if result[x]:
             directions.append(ROOMS.get(x))
-    return result[Rooms.NAME.value] +'\n'+ result[Rooms.DESCRIPTION.value] + '\n' + 'Valid directions: ' + ','.join(directions)
+    send(playerSocket,result[Rooms.NAME.value] +'\n'+ result[Rooms.DESCRIPTION.value] + '\n' + 'Valid directions: ' + ','.join(directions))
 
+def chat(connectionList,player,message):
+    while message[0] != ' ':
+        message = message[1:]
+    message = '[CHAT] '+player.name+': '+message
+    for connection in connectionList:
+        try:
+            send(connection,message)
+        except AttributeError: #Will always happen when the server tries to send to itself.
+            continue
 
 connections = {Server():None}
 loosePlayers = []
@@ -195,7 +201,6 @@ reportTime = 0
 while True:
     timeSinceFrame = time.time() - previousFrame
     previousFrame = time.time()
-    #TODO figure out why nobody is timing out anymore
     for conn in connections: #Collect any idle connected players, put them in idlePlayers, but do not remove them from connections list
         if isinstance(conn,Server):
             continue
@@ -207,15 +212,14 @@ while True:
             connections[conn].timer = timer
         if timer > IDLE_TIMER:
             idlePlayers.append(conn)
-            print('Disconnecting idle player, idle for ',timer,' seconds.')
 
     while len(idlePlayers): #Purge the list
         try: #Try to treat them like real players, which will fail if they're unverified.
             connections[idlePlayers[0]].update(cursor)
             db.commit()
-            print('Player saved to database')
+            print('Idle player',idlePlayers[0].name,'saved to database')
         except AttributeError:
-            print('Unverified player, not saved to database')
+            print('Unverified player disconnected')
             pass
         finally:
             connections.pop(idlePlayers[0])
@@ -225,7 +229,6 @@ while True:
     while i < len(loosePlayers): #Collect any idle disconnected players, put them in idlePlayers, remove from loosePlayers
         loosePlayers[i].timer = loosePlayers[i].timer + timeSinceFrame
         if loosePlayers[i].timer > IDLE_TIMER:
-            print('Purging loose player, idle for ',connections[conn][3],' seconds')
             idlePlayers.append(loosePlayers[i])
             loosePlayers.pop(i)
         else:
@@ -234,10 +237,8 @@ while True:
     while len(idlePlayers):
         idlePlayers[0].update(cursor)
         db.commit()
+        print('Idle player',idlePlayers[0].name,'saved to database')
         idlePlayers.pop(0)
-        print('Idle player saved to database')
-
-
 
     incomingS, outgoingS, errorS = select.select(connections.keys(),connections.keys(),connections.keys(),0.05)
     for client in incomingS:
@@ -262,17 +263,21 @@ while True:
             #If the player is fully logged in, handle their request like normal
             if isinstance(connections[client],Player):
                 connections[client].timer = 0.0
-                #TODO: Split handleRequest into a parser and something which enacts them
-                handleRequest(data,(connections[client]))
+                command = parseCommand(data)
+                if command == 'chat':
+                    chat(connections,connections[client],data)
+                elif command == 'look':
+                    look(client,connections[client],connections[client].location)
+                elif command == 'say':
+                    say(connections,connections[client],data)
             else: #Otherwise, call verification to collect the information they've provided
                 connections[client][3] = 0.0
                 connections[client] = verification(data,(client,connections[client]))
                 if connections[client][1] == 1 and connections[client][2] == 1: #A verified existing player will have a list like ['Auldrin',1,1]
-                    connections[client] = Player(connections[client][0])
-                    cursor.execute("SELECT * FROM players WHERE name = %s;", (connections[client].name,))
-                    connections[client].db = cursor.fetchone()
-                    print('Verified existing player, replaced verification list with player object')
-                    send(client,look(connections[client].db[3]))
+                    connections[client] = Player(connections[client][0]) #Make a new player with the verified name
+                    connections[client].download(cursor)
+                    print('Verified existing player '+connections[client].name)
+                    look(client,connections[client],connections[client].location)
                     #TODO: Check if player is already in-game, and transfer them to the new connection. Or just put them back in DB and re-check-out.
                 elif connections[client][0] != 0 and connections[client][1] != 0 and connections[client][2] != 0: #A new player looks like ['Auldrin',admin,admin]
                     cursor.execute("INSERT INTO players (name, password, location) VALUES (%s, %s, %s)",(connections[client][0],connections[client][1]))

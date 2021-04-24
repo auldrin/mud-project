@@ -110,25 +110,29 @@ textInput.grid(sticky='S',row=1)
 textInputText = tk.Label(window,text='Type:',width=10)
 textInputText.grid(sticky='SW',row=1)
 
-window.update()
-server = Server()
-output.insert(tk.INSERT, "\nConnecting to server...")
+
 window.update()
 textHistory = []
 textCursor = 0
 textInput.focus()
 
+
+server = Server()
+server.settimeout(0.05)
+output.insert(tk.INSERT, "\nConnecting to server...")
+window.update()
+
 while True:
     while True:
         try:
-            server.settimeout(0.05)
             server.connect(HOST,PORT)
             output.insert(tk.INSERT, "\nConnected successfully.")
-            window.update()
             server.settimeout(None)
+            window.update()
             break
         except (socket.timeout,ConnectionRefusedError):
             server.re_init()
+            server.settimeout(0.05)
             window.update()
             continue
 
@@ -141,8 +145,8 @@ while True:
             except ConnectionResetError:
                 output.insert(tk.INSERT, '\nConnection reset by server, attempting to reconnect')
                 server.re_init()
+                server.settimeout(0.05)
                 break
-
         window.update_idletasks()
         window.update()
 
