@@ -100,7 +100,11 @@ def send(sock,msg):
 
     totalsent = 0
     while totalsent < len(msg):
-        sent = sock.send(msg[totalsent:])
+        try:
+            sent = sock.send(msg[totalsent:])
+        except ConnectionAbortedError:
+            print('Cannot send to loose player')
+            break
         if sent == 0:
             raise RuntimeError('socket connection broken')
         totalsent = totalsent + sent
@@ -112,12 +116,14 @@ def receive(sock):
     while bytes_recd < HEADER_LENGTH:
         chunk = sock.recv(min(HEADER_LENGTH - bytes_recd, HEADER_LENGTH))
         if chunk == b'':
+            print('Runtime error')
             raise RuntimeError('Socket closed during reading')
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
     #reassemble and decode header
     header = b''.join(chunks)
     length = int(str(header,'utf-8'))
+    print('Header length: ',length)
 
     chunks = []
     bytes_recd = 0
@@ -128,6 +134,7 @@ def receive(sock):
             raise RuntimeError('Socket closed during reading')
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
+    print (b''.join(chunks))
     return str(b''.join(chunks),'utf-8')
 
 def verification(msg,player):
@@ -144,8 +151,8 @@ def verification(msg,player):
             send(connection,"Please select a password:")
             verification[2] = 0
         else:
-            send(connection,"Please select a name with only English letters, maximum 30 characters")
-            verification[2] = 0
+            send(connection,"Please select a name with only English letters, maximum 30 characters\n")
+            verification[2] = 1
             verification[0] = 0
 
     elif verification[1] == 0: #Player is either setting or entering password, depending on verification[2]
@@ -224,12 +231,16 @@ def enterRoom(player,room,direction=None):
         message += 'nowhere.'
     room.broadcast(message,player)
 
-
 def leaveRoom(player,room,direction=None):
     room.playerList.remove(player)
     message = player.name
     if direction:
-        message += ' has left to the ' + direction
+        if direction == 'up':
+            message += ' has left upwards.'
+        elif direction == 'down':
+            message += ' has left downwards.'
+        else:
+            message += ' has left to the ' + direction
     else:
         message += ' has vanished.'
     room.broadcast(message)
@@ -237,14 +248,14 @@ def leaveRoom(player,room,direction=None):
 def say(player,room,message):
     while message[0] != ' ':
         message = message[1:]
-    newMessage = ''.join((player.name,' says: \'',message,'\''))
+    newMessage = ''.join((player.name,' says \'',message,'\''))
     room.broadcast(newMessage,player)
     send(player.conn,'You say \''+message+'\'')
 
-def dig(room,message,cursor):
+def dig(room,message,cursor,rooms):
     mList = message.split()
     d = mList[1]
-    name = ''.join(mList[2:])
+    name = ' '.join(mList[2:])
     desc = 'Default description'
     west, east, south, north, up, down = None, None, None, None, None, None
     if d == 'east':
@@ -259,21 +270,29 @@ def dig(room,message,cursor):
         up = room.db[REnum.ID.value]
     elif d == 'up':
         down = room.db[REnum.ID.value]
+    #Save the room as the newest entry in the room table
     cursor.execute('INSERT INTO rooms (name, east, west, north, south, up, down, description) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)',
     (name,east,west,north,south,up,down,desc))
+    #Now get the ID of the newest room
     cursor.execute('SELECT MAX(id) FROM rooms')
     newID = cursor.fetchone()
+    #Use that ID to download the room from the database and add it to the rooms dict
+    cursor.execute('SELECT * FROM rooms WHERE id = %s',(newID))
+    rooms[newID[0]] = Room(cursor.fetchone())
+    #Set the appropriate direction in the previous room to connect to this new room
     cursor.execute('UPDATE rooms SET '+ d +' = %s WHERE id = %s',(newID[0],room.db[REnum.ID.value]))
     db.commit()
+    #Download the previous room to make sure our version is up to date
     cursor.execute('SELECT * FROM rooms WHERE id = %s',(room.db[REnum.ID.value],))
     room.db = cursor.fetchone()
 
 def tele(message,player, rooms):
-    target = int(message.split()[1])
+    print(rooms.keys())
     try:
         target = rooms[target]
     except KeyError:
-        send(player.conn,'Room does not exist')
+        send(player.conn,'Room ' + str(target) + ' does not exist')
+        print(rooms.keys())
         return
     leaveRoom(player,rooms[player.location])
     enterRoom(player,target)
@@ -288,7 +307,6 @@ cursor.execute('SELECT * FROM rooms')
 result = cursor.fetchall()
 for roomEntry in result:
     rooms[roomEntry[REnum.ID.value]] = Room(roomEntry)
-print (rooms)
 #####
 
 previousFrame = time.time()
@@ -375,7 +393,7 @@ while True:
             elif command == 'say':
                 say(connections[client],rooms[connections[client].location],data)
             elif command == 'dig':
-                dig(rooms[connections[client].location],data,cursor)
+                dig(rooms[connections[client].location],data,cursor,rooms)
             elif command == 'tele':
                 tele(data,connections[client],rooms)
             continue
