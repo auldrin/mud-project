@@ -122,14 +122,18 @@ textInput.focus()
 
 server = Server()
 server.settimeout(0.05)
+output.config(state='normal')
 output.insert(tk.INSERT, "\nConnecting to server...")
+output.config(state='disabled')
 window.update()
 
 while True:
     while True:
         try:
             server.connect(HOST,PORT)
+            output.config(state='normal')
             output.insert(tk.INSERT, "\nConnected successfully.")
+            output.config(state='disabled')
             server.settimeout(None)
             window.update()
             break
@@ -144,10 +148,14 @@ while True:
         incoming,outgoing,error = select.select([server.sock],[server.sock],[server.sock])
         if incoming:
             try:
+                output.config(state='normal')
                 output.insert(tk.INSERT, '\n'+receive(server.sock))
                 output.see(tk.END)
+                output.config(state='disabled')
             except (ConnectionResetError):
+                output.config(state='normal')
                 output.insert(tk.INSERT, '\nConnection reset by server, attempting to reconnect')
+                output.config(state='disabled')
                 server.re_init()
                 server.settimeout(0.05)
                 break
