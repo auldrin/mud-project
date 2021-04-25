@@ -6,7 +6,7 @@ HOST = socket.gethostbyname(socket.gethostname())
 PORT = 1024
 
 HEADER_LENGTH = 10
-IDLE_TIMER = 300
+IDLE_TIMER = 30
 
 db = mysql.connector.connect(host='localhost',user='root',password='admin',database="mydatabase")
 cursor = db.cursor()
@@ -41,7 +41,7 @@ class Player:
         self.conn = conn
 
     def upload(self,cursor):
-        cursor.execute('UPDATE players SET location = %s',(self.db[PEnum.LOCATION.value],))
+        cursor.execute('UPDATE players SET location = %s WHERE name = %s',(self.location,self.name))
 
     def download(self,cursor):
         cursor.execute("SELECT * FROM players WHERE name = %s",(self.name,))
@@ -284,13 +284,17 @@ def dig(room,message,cursor,rooms):
     cursor.execute('SELECT * FROM rooms WHERE id = %s',(room.db[REnum.ID.value],))
     room.db = cursor.fetchone()
 
-def tele(message,player, rooms):
+def tele(message,player,rooms):
     print(rooms.keys())
     try:
+        target = int(message.split()[1])
         target = rooms[target]
     except KeyError:
         send(player.conn,'Room ' + str(target) + ' does not exist')
         print(rooms.keys())
+        return
+    except IndexError:
+        send(player.conn,'Please provide a target room. Correct format: \'tele 1\'')
         return
     leaveRoom(player,rooms[player.location])
     enterRoom(player,target)
@@ -331,7 +335,7 @@ while True:
             idleP.upload(cursor)
             db.commit()
             print('Idle player',idleP.name,'saved to database')
-            leaveRoom(idleP,rooms[idleP.db[PEnum.LOCATION.value]])
+            leaveRoom(idleP,rooms[idleP.location])
         except AttributeError:
             print('Unverified player disconnected')
         finally:
@@ -354,7 +358,7 @@ while True:
         idlePlayers[0].upload(cursor)
         db.commit()
         print('Idle player',idlePlayers[0].name,'saved to database')
-        leaveRoom(idlePlayers[0],rooms[idlePlayers[0].db[PEnum.LOCATION.value]])
+        leaveRoom(idlePlayers[0],rooms[idlePlayers[0].location])
         idlePlayers.pop(0)
 
     incomingS, outgoingS, errorS = select.select(connections.keys(),connections.keys(),connections.keys(),0.05)
