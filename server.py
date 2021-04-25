@@ -123,7 +123,6 @@ def receive(sock):
     #reassemble and decode header
     header = b''.join(chunks)
     length = int(str(header,'utf-8'))
-    print('Header length: ',length)
 
     chunks = []
     bytes_recd = 0
@@ -134,7 +133,6 @@ def receive(sock):
             raise RuntimeError('Socket closed during reading')
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
-    print (b''.join(chunks))
     return str(b''.join(chunks),'utf-8')
 
 def verification(msg,player):
@@ -318,10 +316,10 @@ while True:
     for conn in connections: #Collect any idle connected players, put them in idlePlayers, don't remove from connections yet because iterator
         if isinstance(conn,Server):
             continue
-        try:
+        try: #Unverified players use entry 3 as their timeout
             timer = connections[conn][3] + timeSinceFrame
             connections[conn][3] = timer
-        except TypeError:
+        except TypeError: #Verified players use .timer on the player object
             timer = connections[conn].timer + timeSinceFrame
             connections[conn].timer = timer
         if timer > IDLE_TIMER:
@@ -336,7 +334,6 @@ while True:
             leaveRoom(idleP,rooms[idleP.db[PEnum.LOCATION.value]])
         except AttributeError:
             print('Unverified player disconnected')
-            pass
         finally:
             send(idlePlayers[0],'You are being disconnected for inactivity, sorry!')
             idlePlayers[0].close()
@@ -344,9 +341,8 @@ while True:
             idlePlayers.pop(0)
             del idleP
 
-
     i = 0
-    while i < len(loosePlayers): #Collect any idle disconnected players, put them in idlePlayers, remove from loosePlayers
+    while i < len(loosePlayers): #Check each loose player, put them in idlePlayers if they are idle, remove from loosePlayers
         loosePlayers[i].timer = loosePlayers[i].timer + timeSinceFrame
         if loosePlayers[i].timer > IDLE_TIMER:
             idlePlayers.append(loosePlayers[i])
@@ -383,6 +379,7 @@ while True:
             continue
         ###################################################################
         #If the player is fully logged in, parse and handle their command
+        #TODO: Avoid checking the command twice somehow, while still supporting 'e' for 'east' and such.
         if isinstance(connections[client],Player):
             connections[client].timer = 0.0
             command = parseCommand(data)
@@ -398,15 +395,52 @@ while True:
                 tele(data,connections[client],rooms)
             continue
         ###################################################################
-        #If the player is unverified, attempt to verify using the new data
+        #If the player is unverified, attempt to verify using their input
         connections[client][3] = 0.0
         connections[client] = verification(data,(client,connections[client]))
         if connections[client][1] == 1 and connections[client][2] == 1: #A verified existing player will have a list like ['Auldrin',1,1,0]
+            #TODO: Check if player is already in-game, and transfer them to the new connection. Or just put them back in DB and re-check-out.
+            connections[client][0] = connections[client][0].capitalize()
+            foundPlayer = False
+            connectedToExisting = False
+            for oldPlayer in connections:
+                if isinstance(oldPlayer, Server) or isinstance(connections[oldPlayer],list):
+                    continue #Don't want to bother the server, or any unverified players.
+                if connections[oldPlayer].name == connections[client][0]:
+                    #Set the new connection's player as the old player object
+                    connections[client] = connections[oldPlayer]
+                    #Set the old player object's connection reference to the new connection
+                    connections[oldPlayer].conn = client
+                    #Delete the old connection from connections list, but warn them first
+                    try:
+                        send(oldPlayer,'You are being usurped by someone who knows your username and password. Sorry if it\'s not you')
+                    except:
+                        pass
+                    connections.pop(oldPlayer)
+                    foundPlayer = True
+                    connectedToExisting = True
+                    print('Player is already logged in, connecting to existing body')
+                    rooms[connections[client].db[PEnum.LOCATION.value]].broadcast(connections[client].name + '\'s body has been taken over by a new soul.',connections[client])
+                    send(connections[client].conn,'You have entered your body, forcing out the soul inhabiting it.')
+                    break
+            if not foundPlayer: #If the player wasn't in the main list, check if they're in the loose player list
+                for looseP in loosePlayers:
+                    if looseP.name == connections[client][0]:
+                        connections[client] = looseP #Replace the new connection's verification tuple with the old body
+                        looseP.conn = client #Tell the old body about its new connection
+                        loosePlayers.remove(looseP) #Remove the body from loose players
+                        connectedToExisting = True
+                        print('Player being connected to loose body')
+                        print(connections[client])
+                        rooms[connections[client].db[PEnum.LOCATION.value]].broadcast(connections[client].name + '\'s soul has returned to their body.',connections[client])
+                        send(connections[client].conn,'You have re-entered your body, right where you left it.')
+                        break
+            if connectedToExisting:
+                break
             connections[client] = Player(connections[client][0],client) #Make a new player with the verified name
             connections[client].download(cursor)
             print('Verified existing player '+connections[client].name)
             enterRoom(connections[client],rooms[connections[client].location])
-            #TODO: Check if player is already in-game, and transfer them to the new connection. Or just put them back in DB and re-check-out.
         elif connections[client][0] != 0 and connections[client][1] != 0 and connections[client][2] != 0: #A new player looks like ['Auldrin',admin,admin,0]
             cursor.execute("INSERT INTO players (name, password, location) VALUES (%s, %s, %s)",(connections[client][0].capitalize(),connections[client][1],1))
             db.commit()
