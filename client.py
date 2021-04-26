@@ -3,7 +3,6 @@ import socket, select, sys, tkinter as tk
 
 HOST = '192.168.2.15'
 
-
 PORT = 1024
 HEADER_LENGTH = 10
 
@@ -70,7 +69,9 @@ def handle_enter(event):
     if not text:
         return
     textInput.delete(0,tk.END)
+    output.config(state='normal')
     output.insert(tk.INSERT,'\n'+text)
+    output.config(state='disabled')
     send(server.sock,text)
     textHistory.append(text)
     textCursor = 0
@@ -121,7 +122,7 @@ textInput.focus()
 
 
 server = Server()
-server.settimeout(0.05)
+server.settimeout(0.3)
 output.config(state='normal')
 output.insert(tk.INSERT, "\nConnecting to server...")
 output.config(state='disabled')
@@ -139,7 +140,7 @@ while True:
             break
         except (socket.timeout,ConnectionRefusedError):
             server.re_init()
-            server.settimeout(0.05)
+            server.settimeout(0.3)
             window.update()
             continue
 
@@ -157,7 +158,7 @@ while True:
                 output.insert(tk.INSERT, '\nConnection reset by server, attempting to reconnect')
                 output.config(state='disabled')
                 server.re_init()
-                server.settimeout(0.05)
+                server.settimeout(0.3)
                 break
         elif error:
             print('Shit\'s fucked')
