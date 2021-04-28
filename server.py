@@ -65,6 +65,10 @@ class Room:
             else:
                 send(player.conn,message)
 
+    def update(self,cursor):
+        cursor.execute('SELECT * FROM rooms WHERE id = %s',(self.db[REnum.ID.value],))
+        self.db = cursor.fetchone()
+
 class Server:
     def __init__(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -183,13 +187,21 @@ def verification(msg,player):
 def parseCommand(msg):
     msg = msg.lower()
     if all([char in ['n','e','w','s','u','d'] for char in msg]):
-        print('Could be a direction command')
-    #TODO: replace this with a tuple iterator for the love of god
+        return 'multimove'
+    elif msg in ('north','east','south','west','up','down'):
+        return 'move'
     msg = msg.split()[0]
     for command in commandList:
-        if msg == command[:len(msg)]:
+        if command.startswith(msg):
             return command
     return None
+
+def reverseDirection(key):
+    if key % 2:
+        key -= 1
+    else:
+        key += 1
+    return key
 
 def convertStringToRoomEnum(string):
     if string == 'east':
@@ -206,6 +218,20 @@ def convertStringToRoomEnum(string):
         return REnum.DOWN.value
     else:
         return None
+
+def lengthenDirection(d):
+    if d == 'e':
+        return 'east'
+    elif d == 'w':
+        return 'west'
+    elif d == 's':
+        return 'south'
+    elif d == 'n':
+        return 'north'
+    elif d == 'u':
+        return 'up'
+    elif d == 'd':
+        return 'down'
 
 def look(player,message,rooms):
     room = rooms[player.location]
@@ -252,7 +278,12 @@ def enterRoom(player,room,direction=None):
     room.playerList.append(player)
     message = player.name + ' has arrived from '
     if direction:
-        message += 'the ' + direction
+        if direction == 'up':
+            message += 'above.'
+        elif direction == 'down':
+            message += 'below.'
+        else:
+            message += 'the ' + direction + '.'
     else:
         message += 'nowhere.'
     room.broadcast(message,player)
@@ -278,9 +309,8 @@ def say(player,room,message):
     send(player.conn,'You say \''+message+'\'')
 
 def dig(room,message,rooms,cursor):
-    mList = message.split()
-    d = mList[1]
-    name = ' '.join(mList[2:])
+    name = message.partition(' ')[2] #e.g 'dig west The Place' becomes 'west The Place'
+    d,pointlessVar,name = message.partition(' ')[2] #e.g 'west The Place' becomes 'west',' ','The Place'
     desc = 'Default description'
     west, east, south, north, up, down = None, None, None, None, None, None
     if d == 'east':
@@ -307,9 +337,8 @@ def dig(room,message,rooms,cursor):
     #Set the appropriate direction in the previous room to connect to this new room
     cursor.execute('UPDATE rooms SET '+ d +' = %s WHERE id = %s',(newID[0],room.db[REnum.ID.value]))
     db.commit()
-    #Download the previous room to make sure our version is up to date
-    cursor.execute('SELECT * FROM rooms WHERE id = %s',(room.db[REnum.ID.value],))
-    room.db = cursor.fetchone()
+    #Update the origin room to reflect the new link
+    room.update(cursor)
 
 def tele(player,message,rooms):
     print(rooms.keys())
@@ -335,49 +364,70 @@ def link(player,message,rooms,cursor):
         t = message[2]
     except (AttributeError,TypeError,KeyError):
         send(player.conn,'Invalid usage, try: \'link west 1\' format instead.')
-        print('Link failed due to arguments?')
         return
 
-    if d == 'east':
-        key = REnum.EAST.value
-    elif d == 'west':
-        key = REnum.WEST.value
-    elif d == 'north':
-        key = REnum.NORTH.value
-    elif d == 'south':
-        key = REnum.SOUTH.value
-    elif d == 'down':
-        key = REnum.DOWN.value
-    elif d == 'up':
-        key = REnum.UP.value
-    else:
+    key = convertStringToRoomEnum(d)
+    if not key:
         send(player.conn,'Direction invalid')
     try:
         cursor.execute('UPDATE rooms SET '+d+' = %s WHERE id = %s',(t,player.location,))
     except:
-        send(player.conn,'Specified room does not exist')
+        send(player.conn,'Invalid usage, try: \'link west 1\' format instead.')
         return
     db.commit()
-    cursor.execute('SELECT * FROM rooms WHERE id = %s',(player.location,))
-    rooms[player.location].db = cursor.fetchone()
+    rooms[player.location].update(cursor)
     send(player.conn,'Successfully linked rooms')
-    #Could use following code as a basis to support two way links using an optional third argument.
-    #if not key % 2: #If key is even, opposite direction is -1
-    #    rooms[t].db[key-1] = player.location
-    #else: #If key is odd, opposite direction is +1
-    #    rooms[t].db[key+1] = player.location
+
+def editDesc(player,message,rooms,cursor):
+    message = message.partition(' ')[2]
+    cursor.execute('UPDATE rooms set description = %s WHERE id = %s',(message,player.location))
+    db.commit()
+    rooms[player.location].update(cursor)
+    send(player.conn,'Successfully edited room description')
+
+def editName(player,message,rooms,cursor):
+    message = message.partition(' ')[2]
+    cursor.execute('UPDATE rooms set name = %s WHERE id = %s',(message,player.location))
+    db.commit()
+    rooms[player.location].update(cursor)
+    send(player.conn,'Successfully edited room name')
+
+def move(player,message,rooms,multi=False):
+    if multi: #message will be, for example, 'eeeswdu'
+        for c in message:
+            d = lengthenDirection(c) #take 'e' and make it 'east'
+            try:
+                destination = rooms[rooms[player.location].db[convertStringToRoomEnum(d)]] #convert east to the appropriate enum key for the database
+            except KeyError:
+                send(player.conn,'There\'s nothing that way')
+                continue
+            leaveRoom(player,rooms[player.location],d) #Inform the room and its players that the player is departing
+            enterRoom(player,destination,REnum.get(reverseDirection(convertStringToRoomEnum(d)))) #convert east to the enum key, then flip it and convert it back
+            look(player,'',rooms)
+    else: #message will be, for example, 'east'
+        try:
+            destination = rooms[rooms[player.location].db[convertStringToRoomEnum(message)]] #turn east to an enum key for the database
+        except KeyError:
+            send(player.conn,'There\'s nothing that way')
+            return
+        leaveRoom(player,rooms[player.location],message)
+        enterRoom(player,destination,REnum.get(reverseDirection(convertStringToRoomEnum(message)))) #convert east to an enum key, then reverse it
+        look(player,'',rooms)
+
+
 
 connections = {Server():None}
 loosePlayers = []
 idlePlayers = []
 rooms = {}
-commandList = ('look','chat','say','dig','tele','link')
+commandList = ('look','chat','say','dig','tele','link','editdesc','editname')
 
 ##### Loads the rooms from the database into a dictionary
 cursor.execute('SELECT * FROM rooms')
 result = cursor.fetchall()
 for roomEntry in result:
     rooms[roomEntry[REnum.ID.value]] = Room(roomEntry)
+print(len(rooms),'rooms loaded successfully.')
 #####
 
 previousFrame = time.time()
@@ -456,7 +506,11 @@ while True:
         if isinstance(connections[client],Player):
             connections[client].timer = 0.0
             command = parseCommand(data)
-            if command == 'chat':
+            if command == 'move':
+                move(connections[client],data,rooms)
+            elif command == 'multimove':
+                move(connections[client],data,rooms,True)
+            elif command == 'chat':
                 chat(connections[client],data,connections)
             elif command == 'look':
                 look(connections[client],data,rooms)
@@ -468,6 +522,10 @@ while True:
                 tele(connections[client],data,rooms)
             elif command == 'link':
                 link(connections[client],data,rooms, cursor)
+            elif command == 'editdesc':
+                editDesc(connections[client],data,rooms,cursor)
+            elif command == 'editname':
+                editName(connections[client],data,rooms,cursor)
             continue
         ###################################################################
         #If the player is unverified, attempt to verify using their input
