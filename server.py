@@ -3,44 +3,24 @@ import random
 import socket
 import select
 import mysql.connector
-from enum import Enum
 
+import utility as u
+import command as c
+import settings
 
 HOST = socket.gethostbyname(socket.gethostname())
-PORT = 1024
+PORT = settings.PORT
 
-HEADER_LENGTH = 10
-IDLE_TIMER = 300
+HEADER_LENGTH = settings.HEADER_LENGTH
+IDLE_TIMER = settings.IDLE_TIMER
 
 db = mysql.connector.connect(host='localhost',user='root',password='admin',database="mydatabase")
 cursor = db.cursor()
-
-class REnum(Enum): #Enumerater which stores the order of the rooms database information
-    ID = 0
-    NAME = 1
-    EAST = 2
-    WEST = 3
-    NORTH = 4
-    SOUTH = 5
-    UP = 6
-    DOWN = 7
-    DESCRIPTION = 8
-    def get(number):
-        return REnum(number).name
-
-class PEnum(Enum): #Enumerater for the player database information
-    ID = 0
-    NAME = 1
-    PASSWORD = 2
-    LOCATION = 3
-    def get(number):
-        return PEnum(number).name
 
 class Player:
     def __init__(self,name,conn):
         self.name = name
         self.db = None
-        self.verified = True
         self.timer = 0.0
         self.conn = conn
 
@@ -50,8 +30,8 @@ class Player:
     def download(self,cursor):
         cursor.execute("SELECT * FROM players WHERE name = %s",(self.name,))
         self.db = cursor.fetchone()
-        self.name = self.db[PEnum.NAME.value]
-        self.location = self.db[PEnum.LOCATION.value]
+        self.name = self.db[u.PEnum.NAME.value]
+        self.location = self.db[u.PEnum.LOCATION.value]
 
 class Room:
     def __init__(self,db):
@@ -93,30 +73,6 @@ class Server:
         else:
             return False
 
-def send(sock,msg):
-    #convert to bytes
-    msg = bytes(msg,'utf-8')
-
-    #assemble fixed length header
-    length = bytes(str(len(msg)),'utf-8')
-    pad = HEADER_LENGTH-len(length)
-    if pad >= 1:
-        length = length + b' '*pad
-
-    #attach header
-    msg = length+msg
-
-    totalsent = 0
-    while totalsent < len(msg):
-        try:
-            sent = sock.send(msg[totalsent:])
-        except ConnectionAbortedError:
-            print('Cannot send to loose player')
-            break
-        if sent == 0:
-            raise RuntimeError('socket connection broken')
-        totalsent = totalsent + sent
-
 def receive(sock):
     chunks = []
     bytes_recd = 0
@@ -152,12 +108,12 @@ def verification(msg,player):
         cursor.execute("SELECT name FROM players WHERE name = %s;", (verification[0],))
         result = cursor.fetchone()
         if result:
-            send(connection,"Please enter your password:")
+            u.send(connection,"Please enter your password:")
         elif msg.isalpha() and len(msg) <= 30:
-            send(connection,"Please select a password:")
+            u.send(connection,"Please select a password:")
             verification[2] = 0
         else:
-            send(connection,"Please select a name with only English letters, maximum 30 characters\n")
+            u.send(connection,"Please select a name with only English letters, maximum 30 characters\n")
             verification[2] = 1
             verification[0] = 0
 
@@ -166,21 +122,21 @@ def verification(msg,player):
             cursor.execute("SELECT password FROM players WHERE name = %s;", (verification[0],))
             playerPassword = cursor.fetchone()
             if playerPassword[0] == msg:
-                send(connection,"Welcome to the server.")
+                u.send(connection,"Welcome to the server.")
                 verification[1] = 1
             else:
-                send(connection,"Password incorrect, re-enter username")
+                u.send(connection,"Password incorrect, re-enter username")
                 return[0,0,1,0]
         else:
             verification[1] = msg
-            send(connection,"Please re-enter to confirm")
+            u.send(connection,"Please re-enter to confirm")
 
     elif verification[2] == 0: #Player is confirming the previously entered password
         if msg == verification[1]:
-            send(connection,"Welcome to the server.")
+            u.send(connection,"Welcome to the server.")
             verification[2] = 1
         else:
-            send(connection,"Password mismatch, clearing both. Try again.")
+            u.send(connection,"Password mismatch, clearing both. Try again.")
             verification[1] = 0
     return verification
 
@@ -196,226 +152,6 @@ def parseCommand(msg):
             return command
     return None
 
-def reverseDirection(key):
-    if key % 2:
-        key -= 1
-    else:
-        key += 1
-    return key
-
-def convertStringToRoomEnum(string):
-    if string == 'east':
-        return REnum.EAST.value
-    elif string == 'west':
-        return REnum.WEST.value
-    elif string == 'south':
-        return REnum.SOUTH.value
-    elif string == 'north':
-        return REnum.NORTH.value
-    elif string == 'up':
-        return REnum.UP.value
-    elif string == 'down':
-        return REnum.DOWN.value
-    else:
-        return None
-
-def lengthenDirection(d):
-    if d == 'e':
-        return 'east'
-    elif d == 'w':
-        return 'west'
-    elif d == 's':
-        return 'south'
-    elif d == 'n':
-        return 'north'
-    elif d == 'u':
-        return 'up'
-    elif d == 'd':
-        return 'down'
-
-def look(player,message,rooms):
-    room = rooms[player.location]
-    try:
-        arg = message.split()[1]
-    except IndexError: #Triggered by message only containing one word, just means doing a default look
-        pass
-    try:
-        key = convertStringToRoomEnum(arg)
-        room = rooms[room.db[key]]
-    except KeyError: #Triggered by rooms when room.db[key] is None, which means there is no room that way. Inform the player.
-        send(player.conn,'There is nothing that way.')
-        return
-    except TypeError:
-        pass #Type error will be triggered if key = None, which means arg was an unlisted direction. Just do a default look.
-    except UnboundLocalError:
-        pass #Triggered by trying to access arg for conversion, means there was no argument. Do a default look.
-
-    directions = []
-    players = []
-    for x in range(2,8):
-        if room.db[x]:
-            directions.append(REnum.get(x))
-
-    message = '\n'.join((room.db[REnum.NAME.value], room.db[REnum.DESCRIPTION.value],))
-    for p in room.playerList:
-        if p.name == player.name:
-            continue
-        message += ''.join(('\n',p.name,' is standing here.'))
-    message += '\nValid directions: ' + ','.join(directions)
-    send(player.conn,message)
-
-def chat(player,message,connectionList):
-    message = message.partition(' ')[2]
-    message = '[CHAT] '+player.name+': '+message
-    for connection in connectionList:
-        try:
-            send(connection,message)
-        except AttributeError: #Will always happen when the server tries to send to itself.
-            continue
-
-def enterRoom(player,room,direction=None):
-    player.location = room.db[REnum.ID.value]
-    room.playerList.append(player)
-    message = player.name + ' has arrived from '
-    if direction:
-        if direction == 'up':
-            message += 'above.'
-        elif direction == 'down':
-            message += 'below.'
-        else:
-            message += 'the ' + direction + '.'
-    else:
-        message += 'nowhere.'
-    room.broadcast(message,player)
-
-def leaveRoom(player,room,direction=None):
-    room.playerList.remove(player)
-    message = player.name
-    if direction:
-        if direction == 'up':
-            message += ' has left upwards.'
-        elif direction == 'down':
-            message += ' has left downwards.'
-        else:
-            message += ' has left to the ' + direction
-    else:
-        message += ' has vanished.'
-    room.broadcast(message)
-
-def say(player,room,message):
-    message = message.partition(' ')[2]
-    newMessage = ''.join((player.name,' says \'',message,'\''))
-    room.broadcast(newMessage,player)
-    send(player.conn,'You say \''+message+'\'')
-
-def dig(room,message,rooms,cursor):
-    name = message.partition(' ')[2] #e.g 'dig west The Place' becomes 'west The Place'
-    d,pointlessVar,name = message.partition(' ')[2] #e.g 'west The Place' becomes 'west',' ','The Place'
-    desc = 'Default description'
-    west, east, south, north, up, down = None, None, None, None, None, None
-    if d == 'east':
-        west = room.db[REnum.ID.value]
-    elif d == 'west':
-        east = room.db[REnum.ID.value]
-    elif d == 'north':
-        south = room.db[REnum.ID.value]
-    elif d == 'south':
-        north = room.db[REnum.ID.value]
-    elif d == 'down':
-        up = room.db[REnum.ID.value]
-    elif d == 'up':
-        down = room.db[REnum.ID.value]
-    #Save the room as the newest entry in the room table
-    cursor.execute('INSERT INTO rooms (name, east, west, north, south, up, down, description) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)',
-    (name,east,west,north,south,up,down,desc))
-    #Now get the ID of the newest room
-    cursor.execute('SELECT MAX(id) FROM rooms')
-    newID = cursor.fetchone()
-    #Use that ID to download the room from the database and add it to the rooms dict
-    cursor.execute('SELECT * FROM rooms WHERE id = %s',(newID))
-    rooms[newID[0]] = Room(cursor.fetchone())
-    #Set the appropriate direction in the previous room to connect to this new room
-    cursor.execute('UPDATE rooms SET '+ d +' = %s WHERE id = %s',(newID[0],room.db[REnum.ID.value]))
-    db.commit()
-    #Update the origin room to reflect the new link
-    room.update(cursor)
-
-def tele(player,message,rooms):
-    print(rooms.keys())
-    try:
-        target = int(message.split()[1])
-        target = rooms[target]
-    except KeyError:
-        send(player.conn,'Room ' + str(target) + ' does not exist')
-        print(rooms.keys())
-        return
-    except (IndexError,ValueError):
-        send(player.conn,'Please provide a target room. Correct format: \'tele 1\'')
-        return
-    leaveRoom(player,rooms[player.location])
-    enterRoom(player,target)
-    look(player,'',rooms)
-
-def link(player,message,rooms,cursor):
-    try:
-        message = message.lower()
-        message = message.split()
-        d = message[1]
-        t = message[2]
-    except (AttributeError,TypeError,KeyError):
-        send(player.conn,'Invalid usage, try: \'link west 1\' format instead.')
-        return
-
-    key = convertStringToRoomEnum(d)
-    if not key:
-        send(player.conn,'Direction invalid')
-    try:
-        cursor.execute('UPDATE rooms SET '+d+' = %s WHERE id = %s',(t,player.location,))
-    except:
-        send(player.conn,'Invalid usage, try: \'link west 1\' format instead.')
-        return
-    db.commit()
-    rooms[player.location].update(cursor)
-    send(player.conn,'Successfully linked rooms')
-
-def editDesc(player,message,rooms,cursor):
-    message = message.partition(' ')[2]
-    cursor.execute('UPDATE rooms set description = %s WHERE id = %s',(message,player.location))
-    db.commit()
-    rooms[player.location].update(cursor)
-    send(player.conn,'Successfully edited room description')
-
-def editName(player,message,rooms,cursor):
-    message = message.partition(' ')[2]
-    cursor.execute('UPDATE rooms set name = %s WHERE id = %s',(message,player.location))
-    db.commit()
-    rooms[player.location].update(cursor)
-    send(player.conn,'Successfully edited room name')
-
-def move(player,message,rooms,multi=False):
-    if multi: #message will be, for example, 'eeeswdu'
-        for c in message:
-            d = lengthenDirection(c) #take 'e' and make it 'east'
-            try:
-                destination = rooms[rooms[player.location].db[convertStringToRoomEnum(d)]] #convert east to the appropriate enum key for the database
-            except KeyError:
-                send(player.conn,'There\'s nothing that way')
-                continue
-            leaveRoom(player,rooms[player.location],d) #Inform the room and its players that the player is departing
-            enterRoom(player,destination,REnum.get(reverseDirection(convertStringToRoomEnum(d)))) #convert east to the enum key, then flip it and convert it back
-            look(player,'',rooms)
-    else: #message will be, for example, 'east'
-        try:
-            destination = rooms[rooms[player.location].db[convertStringToRoomEnum(message)]] #turn east to an enum key for the database
-        except KeyError:
-            send(player.conn,'There\'s nothing that way')
-            return
-        leaveRoom(player,rooms[player.location],message)
-        enterRoom(player,destination,REnum.get(reverseDirection(convertStringToRoomEnum(message)))) #convert east to an enum key, then reverse it
-        look(player,'',rooms)
-
-
-
 connections = {Server():None}
 loosePlayers = []
 idlePlayers = []
@@ -426,7 +162,7 @@ commandList = ('look','chat','say','dig','tele','link','editdesc','editname')
 cursor.execute('SELECT * FROM rooms')
 result = cursor.fetchall()
 for roomEntry in result:
-    rooms[roomEntry[REnum.ID.value]] = Room(roomEntry)
+    rooms[roomEntry[u.REnum.ID.value]] = Room(roomEntry)
 print(len(rooms),'rooms loaded successfully.')
 #####
 
@@ -454,11 +190,11 @@ while True:
             idleP.upload(cursor)
             db.commit()
             print('Idle player',idleP.name,'saved to database')
-            leaveRoom(idleP,rooms[idleP.location])
+            u.leaveRoom(idleP,rooms[idleP.location])
         except AttributeError:
             print('Unverified player disconnected')
         finally:
-            send(idlePlayers[0],'You are being disconnected for inactivity, sorry!')
+            u.send(idlePlayers[0],'You are being disconnected for inactivity, sorry!')
             idlePlayers[0].close()
             connections.pop(idlePlayers[0])
             idlePlayers.pop(0)
@@ -477,7 +213,7 @@ while True:
         idlePlayers[0].upload(cursor)
         db.commit()
         print('Idle player',idlePlayers[0].name,'saved to database')
-        leaveRoom(idlePlayers[0],rooms[idlePlayers[0].location])
+        u.leaveRoom(idlePlayers[0],rooms[idlePlayers[0].location])
         idlePlayers.pop(0)
 
     incomingS, outgoingS, errorS = select.select(connections.keys(),connections.keys(),connections.keys(),0.05)
@@ -487,7 +223,7 @@ while True:
             if client.accept():
                 #Authentication list [username, password, password confirmation (if new account),timeoutTimer]
                 connections[client.conn] = [0,0,1,0]
-                send(client.conn,"Enter username:")
+                u.send(client.conn,"Enter username:")
             continue
         ###################################################################
         #If the client is an actual player, receive the data
@@ -507,25 +243,25 @@ while True:
             connections[client].timer = 0.0
             command = parseCommand(data)
             if command == 'move':
-                move(connections[client],data,rooms)
+                c.move(connections[client],data,rooms)
             elif command == 'multimove':
-                move(connections[client],data,rooms,True)
+                c.move(connections[client],data,rooms,True)
             elif command == 'chat':
-                chat(connections[client],data,connections)
+                c.chat(connections[client],data,connections)
             elif command == 'look':
-                look(connections[client],data,rooms)
+                c.look(connections[client],data,rooms)
             elif command == 'say':
-                say(connections[client],rooms[connections[client].location],data)
+                c.say(connections[client],rooms[connections[client].location],data)
             elif command == 'dig':
-                dig(rooms[connections[client].location],data,rooms,cursor)
+                c.dig(rooms[connections[client].location],data,rooms,cursor)
             elif command == 'tele':
-                tele(connections[client],data,rooms)
+                c.tele(connections[client],data,rooms)
             elif command == 'link':
-                link(connections[client],data,rooms, cursor)
+                c.link(connections[client],data,rooms, cursor)
             elif command == 'editdesc':
-                editDesc(connections[client],data,rooms,cursor)
+                c.editDesc(connections[client],data,rooms,cursor)
             elif command == 'editname':
-                editName(connections[client],data,rooms,cursor)
+                c.editName(connections[client],data,rooms,cursor)
             continue
         ###################################################################
         #If the player is unverified, attempt to verify using their input
@@ -554,7 +290,7 @@ while True:
                     connectedToExisting = True
                     print('Player is already logged in, connecting to existing body')
                     rooms[connections[client].db[PEnum.LOCATION.value]].broadcast(connections[client].name + '\'s body has been taken over by a new soul.',connections[client])
-                    send(connections[client].conn,'You have entered your body, forcing out the soul inhabiting it.')
+                    u.send(connections[client].conn,'You have entered your body, forcing out the soul inhabiting it.')
                     break
             if not foundPlayer: #If the player wasn't in the main list, check if they're in the loose player list
                 for looseP in loosePlayers:
@@ -566,18 +302,18 @@ while True:
                         print('Player being connected to loose body')
                         print(connections[client])
                         rooms[connections[client].db[PEnum.LOCATION.value]].broadcast(connections[client].name + '\'s soul has returned to their body.',connections[client])
-                        send(connections[client].conn,'You have re-entered your body, right where you left it.')
+                        u.send(connections[client].conn,'You have re-entered your body, right where you left it.')
                         break
             if connectedToExisting:
                 break
             connections[client] = Player(connections[client][0],client) #Make a new player with the verified name
             connections[client].download(cursor)
             print('Verified existing player '+connections[client].name)
-            enterRoom(connections[client],rooms[connections[client].location])
+            u.enterRoom(connections[client],rooms[connections[client].location])
         elif connections[client][0] != 0 and connections[client][1] != 0 and connections[client][2] != 0: #A new player looks like ['Auldrin',admin,admin,0]
             cursor.execute("INSERT INTO players (name, password, location) VALUES (%s, %s, %s)",(connections[client][0].capitalize(),connections[client][1],1))
             db.commit()
             connections[client] = Player(connections[client][0],client)
             connections[client].download(cursor)
             print('Verified new player ',connections[client].name)
-            enterRoom(connections[client],rooms[connections[client].location])
+            u.enterRoom(connections[client],rooms[connections[client].location])
