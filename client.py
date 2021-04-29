@@ -68,6 +68,7 @@ def handle_enter(event):
     text = textInput.get()
     if not text:
         return
+    text = text.strip()
     textInput.delete(0,tk.END)
     output.config(state='normal')
     output.insert(tk.INSERT,'\n'+text)

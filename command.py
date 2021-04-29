@@ -1,4 +1,5 @@
 import utility as u
+import random
 
 def say(player,room,message):
     message = message.partition(' ')[2]
@@ -34,7 +35,7 @@ def dig(room,message,rooms,cursor):
     rooms[newID[0]] = Room(cursor.fetchone())
     #Set the appropriate direction in the previous room to connect to this new room
     cursor.execute('UPDATE rooms SET '+ d +' = %s WHERE id = %s',(newID[0],room.db[REnum.ID.value]))
-    db.commit()
+    #db.commit()
     #Update the origin room to reflect the new link
     room.update(cursor)
 
@@ -64,33 +65,36 @@ def link(player,message,rooms,cursor):
         send(player.conn,'Invalid usage, try: \'link west 1\' format instead.')
         return
 
-    key = convertStringToRoomEnum(d)
+    key = u.convertStringToRoomEnum(d)
     if not key:
-        send(player.conn,'Direction invalid')
+        u.send(player.conn,'Direction invalid')
     try:
         cursor.execute('UPDATE rooms SET '+d+' = %s WHERE id = %s',(t,player.location,))
     except:
         u.send(player.conn,'Invalid usage, try: \'link west 1\' format instead.')
         return
-    db.commit()
+    #db.commit()
     rooms[player.location].update(cursor)
     u.send(player.conn,'Successfully linked rooms')
 
 def editDesc(player,message,rooms,cursor):
     message = message.partition(' ')[2]
     cursor.execute('UPDATE rooms set description = %s WHERE id = %s',(message,player.location))
-    db.commit()
+    #db.commit()
     rooms[player.location].update(cursor)
     u.send(player.conn,'Successfully edited room description')
 
 def editName(player,message,rooms,cursor):
     message = message.partition(' ')[2]
     cursor.execute('UPDATE rooms set name = %s WHERE id = %s',(message,player.location))
-    db.commit()
+    #db.commit()
     rooms[player.location].update(cursor)
     u.send(player.conn,'Successfully edited room name')
 
 def move(player,message,rooms,multi=False):
+    if player.inCombat:
+        u.send(player.conn,'You can\'t just walk out of combat!')
+        return
     if multi: #message will be, for example, 'eeeswdu'
         for c in message:
             d = u.lengthenDirection(c) #take 'e' and make it 'east'
@@ -151,3 +155,64 @@ def chat(player,message,connectionList):
             u.send(connection,message)
         except AttributeError: #Will always happen when the server tries to send to itself.
             continue
+
+def flee(player,message,rooms):
+    #Calculate direction to go in
+    options = []
+    for index,direction in enumerate(range(2,8)):
+        if rooms[player.location].db[direction]:
+            options.append((rooms[player.location].db[direction],index))
+    if not options:
+        u.send(player.conn,'There is nowhere to flee.')
+        return
+    #Check success
+    if player.inCombat:
+        success = random.randint(0,1)
+    else:
+        success = True
+    #Leave the room, end combat and unlock targets
+    if success:
+        target = random.choice(options)
+        for potentialEnemy in rooms[player.location]:
+            if potentialEnemy.target == player:
+                potentialEnemy.target = None
+        u.leaveRoom(player,rooms[player.location],u.REnum.get(target[1]),True)
+        u.enterRoom(player,rooms[target[0]],u.REnum.get(u.reverseDirection(target[1])))
+        look(player,'',rooms)
+        if player.target:
+            u.send(player.conn,'You successfully escaped ' + player.target.name)
+        elif player.inCombat:
+            u.send(player.conn,'You successfully escaped.')
+        else:
+            u.send(player.conn,'You successfully \'escaped\'.')
+        player.target = None
+        player.inCombat = False
+    else:
+        u.send(player.conn,'You fail to get away!')
+
+def kill(player, message, rooms):
+    #check validity of target
+    message = message.split()[1].capitalize()
+    targetFound = False
+    for p in rooms[player.location].playerList:
+        print(message,player.name,p.name)
+        if p.name.startswith(message) and not player == p:
+            target = p
+            targetFound = True
+            break
+    if not targetFound:
+        u.send(player.conn,'There\'s nobody by that name here.')
+        return
+    #check if room is a valid location for combat, I guess?
+    #
+    if player.target == target:
+        send(player.conn,'You\'re trying as hard as you can!')
+        return
+    target.inCombat = True
+    player.inCombat = True
+    player.target = target
+    if not target.target:
+        target.target = player
+    u.send(player.conn,'You attack ' + target.name + '!')
+    u.send(target.conn,player.name + ' attacks you!')
+    rooms[player.location].broadcast(player.name + ' attacks ' + target.name +'!',player,target)

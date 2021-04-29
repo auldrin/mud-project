@@ -2,7 +2,8 @@ from enum import Enum
 import settings as s
 
 
-class REnum(Enum): #Enumerater which stores the order of the rooms database information
+class REnum(Enum):
+    #Enumerater which tells you where to look in a room db to find specific things
     ID = 0
     NAME = 1
     EAST = 2
@@ -12,18 +13,23 @@ class REnum(Enum): #Enumerater which stores the order of the rooms database info
     UP = 6
     DOWN = 7
     DESCRIPTION = 8
+
     def get(number):
+        #For when you have a number corresponding to a direction (2 through 7) but need a string for the direction
         return REnum(number).name
 
-class PEnum(Enum): #Enumerater for the player database information
+class PEnum(Enum):
+    #Same as REnum but for rooms
     ID = 0
     NAME = 1
     PASSWORD = 2
     LOCATION = 3
     def get(number):
+        #Probably useless
         return PEnum(number).name
 
 def reverseDirection(key):
+    #For when you have a number corresponding to a direction, and want a number for the opposite direction
     if key % 2:
         key -= 1
     else:
@@ -31,6 +37,7 @@ def reverseDirection(key):
     return key
 
 def convertStringToRoomEnum(string):
+    #When you have a direction string, and need a number for it
     if string == 'east':
         return REnum.EAST.value
     elif string == 'west':
@@ -47,6 +54,7 @@ def convertStringToRoomEnum(string):
         return None
 
 def lengthenDirection(d):
+    #When you have a single character direction and want the full length version
     if d == 'e':
         return 'east'
     elif d == 'w':
@@ -85,6 +93,9 @@ def send(sock,msg):
         totalsent = totalsent + sent
 
 def enterRoom(player,room,direction=None):
+    #Changes player location and informs the new room of the arrival. Always call in a pair with leaveRoom, unless logging in/out
+    if direction:
+        direction = direction.lower()
     player.location = room.db[REnum.ID.value]
     room.playerList.append(player)
     message = player.name + ' has arrived from '
@@ -99,16 +110,23 @@ def enterRoom(player,room,direction=None):
         message += 'nowhere.'
     room.broadcast(message,player)
 
-def leaveRoom(player,room,direction=None):
+def leaveRoom(player,room,direction=None,flee=None):
+    #Tells the room that the player is no longer going to be in it. Always call in a pair with enterRoom, unless logging in/out
+    if direction:
+        direction = direction.lower()
     room.playerList.remove(player)
     message = player.name
+    if flee:
+        mode = 'fled'
+    else:
+        mode = 'left'
     if direction:
         if direction == 'up':
-            message += ' has left upwards.'
+            message += ' has ' + mode + 'upwards.'
         elif direction == 'down':
-            message += ' has left downwards.'
+            message += ' has ' + mode + ' downwards.'
         else:
-            message += ' has left to the ' + direction
+            message += ' has ' + mode + ' to the ' + direction + '.'
     else:
         message += ' has vanished.'
     room.broadcast(message)

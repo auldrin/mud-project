@@ -17,9 +17,18 @@ IDLE_TIMER = settings.IDLE_TIMER
 db = mysql.connector.connect(host='localhost',user='root',password='admin',database="mydatabase")
 cursor = db.cursor()
 
-class Player:
-    def __init__(self,name,conn):
+class BaseActor:
+    def __init__(self,name):
         self.name = name
+        self.health = 10
+        self.maxHealth = 10
+        self.inCombat = False
+        self.location = None
+        self.target = None
+
+class Player(BaseActor):
+    def __init__(self,name,conn):
+        super().__init__(name)
         self.db = None
         self.timer = 0.0
         self.conn = conn
@@ -43,10 +52,10 @@ class Room:
             if player == exceptPlayer or player==exceptOther:
                 continue
             else:
-                send(player.conn,message)
+                u.send(player.conn,message)
 
     def update(self,cursor):
-        cursor.execute('SELECT * FROM rooms WHERE id = %s',(self.db[REnum.ID.value],))
+        cursor.execute('SELECT * FROM rooms WHERE id = %s',(self.db[u.REnum.ID.value],))
         self.db = cursor.fetchone()
 
 class Server:
@@ -156,7 +165,7 @@ connections = {Server():None}
 loosePlayers = []
 idlePlayers = []
 rooms = {}
-commandList = ('look','chat','say','dig','tele','link','editdesc','editname')
+commandList = ('look','kill','chat','say','flee','dig','tele','link','editdesc','editname')
 
 ##### Loads the rooms from the database into a dictionary
 cursor.execute('SELECT * FROM rooms')
@@ -246,22 +255,30 @@ while True:
                 c.move(connections[client],data,rooms)
             elif command == 'multimove':
                 c.move(connections[client],data,rooms,True)
+            elif command == 'kill':
+                c.kill(connections[client],data,rooms)
             elif command == 'chat':
                 c.chat(connections[client],data,connections)
             elif command == 'look':
                 c.look(connections[client],data,rooms)
             elif command == 'say':
                 c.say(connections[client],rooms[connections[client].location],data)
+            elif command == 'flee':
+                c.flee(connections[client],data,rooms)
             elif command == 'dig':
                 c.dig(rooms[connections[client].location],data,rooms,cursor)
+                db.commit()
             elif command == 'tele':
                 c.tele(connections[client],data,rooms)
             elif command == 'link':
                 c.link(connections[client],data,rooms, cursor)
+                db.commit()
             elif command == 'editdesc':
                 c.editDesc(connections[client],data,rooms,cursor)
+                db.commit()
             elif command == 'editname':
                 c.editName(connections[client],data,rooms,cursor)
+                db.commit()
             continue
         ###################################################################
         #If the player is unverified, attempt to verify using their input
