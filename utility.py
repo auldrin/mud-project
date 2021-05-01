@@ -92,12 +92,17 @@ def send(sock,msg):
             raise RuntimeError('socket connection broken')
         totalsent = totalsent + sent
 
-def enterRoom(player,room,direction=None):
+def enterRoom(player,room,direction=None,revive=None):
     #Changes player location and informs the new room of the arrival. Always call in a pair with leaveRoom, unless logging in/out
     if direction:
         direction = direction.lower()
     player.location = room.db[REnum.ID.value]
     room.playerList.append(player)
+    if revive:
+        room.broadcast(player.name + ' returns from the dead in an explosion of divine radiance.',player)
+        send(player.conn,'Divine intervention returns you to life.')
+        return
+
     message = player.name + ' has arrived from '
     if direction:
         if direction == 'up':
@@ -110,11 +115,15 @@ def enterRoom(player,room,direction=None):
         message += 'nowhere.'
     room.broadcast(message,player)
 
-def leaveRoom(player,room,direction=None,flee=None):
+def leaveRoom(player,room,direction=None,flee=None,dead=None):
     #Tells the room that the player is no longer going to be in it. Always call in a pair with enterRoom, unless logging in/out
+    room.playerList.remove(player)
+
+    if dead:
+        return
+
     if direction:
         direction = direction.lower()
-    room.playerList.remove(player)
     message = player.name
     if flee:
         mode = 'fled'

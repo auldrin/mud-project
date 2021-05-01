@@ -17,6 +17,12 @@ IDLE_TIMER = settings.IDLE_TIMER
 db = mysql.connector.connect(host='localhost',user='root',password='admin',database="mydatabase")
 cursor = db.cursor()
 
+class Weapon:
+    def __init__(self,name):
+        self.name = name
+        self.damage = {6:2}
+        self.damageType = 'slashing'
+
 class BaseActor:
     def __init__(self,name):
         self.name = name
@@ -25,8 +31,14 @@ class BaseActor:
         self.location = None
         self.target = None
         self.opponents = []
-        #TODO: Should probably reduce risk of unintended behaviour by replacing inCombat with checks to opponents size
+        #TODO: Consider whether to phase out inCombat. It is faster than checking opponents size.
         self.inCombat = False
+
+        self.baseAttackBonus = 0
+        self.armourClass = 10
+        self.nonLethalDamage = 0
+        self.damage = {3:1}
+        self.damageType = 'subdual'
 
 class Mob(BaseActor):
     def __init__(self,name,ID,cursor):
@@ -49,6 +61,53 @@ class Player(BaseActor):
         self.db = cursor.fetchone()
         self.name = self.db[u.PEnum.NAME.value]
         self.location = self.db[u.PEnum.LOCATION.value]
+
+    def attack(self,rooms):
+        try:
+            attackCount = max(1,self.baseAttackBonus//5)
+        except ZeroDivisionError:
+            attackCount = 1
+
+        for a in range(attackCount):
+            print('attempted attack')
+            roll = random.randint(1,20)
+            rollTotal = self.baseAttackBonus + roll
+            if rollTotal > self.target.armourClass:
+                for key in self.damage.keys():
+                    for die in range(self.damage[key]):
+                        damageTotal = random.randint(1,key)
+                        print('Rolled ',self.damage[key],'d',key)
+                u.send(self.conn,'['+str(rollTotal)+','+str(damageTotal)+'] You hit ' + self.target.name + ' with your attack!')
+                u.send(self.target.conn,'['+str(rollTotal)+','+str(damageTotal)+'] '+self.name + ' lands a blow against you!')
+                rooms[self.location].broadcast(self.name+' lands a blow against '+self.target.name+'!',self,self.target)
+                self.target.takeDamage(damageTotal,self.damageType,self,rooms)
+            else:
+                u.send(self.conn,'[' + str(rollTotal) + '] You miss ' + self.target.name + ' with your attack!')
+                u.send(self.target.conn,'['+str(rollTotal)+']'+self.name + ' misses you with their attack!')
+                rooms[self.location].broadcast(self.name+' misses '+self.target.name+' with an attack!',self,self.target)
+
+    def takeDamage(self,damage,dType,attacker,rooms):
+        if dType == 'subdual':
+            self.nonLethalDamage += damage
+        else:
+            self.health -= damage
+
+        if self.health < 0 or self.nonLethalDamage > self.health:
+            #die
+            rooms[self.location].broadcast(self.name+' falls to the ground, dead.',self)
+            u.send(self.conn,'You are dead!')
+            self.inCombat = False
+            while self.opponents:
+                self.opponents[0].opponents.remove(self)
+                if self.opponents[0].target == self:
+                    if self.opponents[0].opponents:
+                        self.opponents[0].target = self.opponents[0].opponents[0]
+                    else:
+                        self.opponents[0].inCombat = False
+                self.opponents.pop(0)
+            self.target = None
+            u.leaveRoom(self,rooms[self.location],dead=True)
+            u.enterRoom(self,rooms[1],None,True)
 
 class Room:
     def __init__(self,db):
@@ -173,7 +232,7 @@ connections = {Server():None}
 loosePlayers = []
 idlePlayers = []
 rooms = {}
-commandList = ('look','kill','chat','say','flee','dig','tele','link','editdesc','editname')
+commandList = ('look','kill','chat','say','flee','me','dig','tele','link','editdesc','editname')
 
 ##### Loads the rooms from the database into a dictionary
 cursor.execute('SELECT * FROM rooms')
@@ -185,10 +244,31 @@ print(len(rooms),'rooms loaded successfully.')
 
 previousFrame = time.time()
 reportTime = 0
+previousCombatRound = previousFrame
 
 while True:
-    timeSinceFrame = time.time() - previousFrame
-    previousFrame = time.time()
+    #Maybe this is dumb, but timeNow avoids having to call time.time three additional times times? Requires testing.
+    timeNow = time.time()
+    timeSinceFrame = timeNow - previousFrame
+    previousFrame = timeNow
+    timeSinceCombatRound = timeNow - previousCombatRound
+    #TODO: Decide how often mobs act. Could be just each combat round, or they could be on a 3 second timer or something.
+    if timeSinceCombatRound >= settings.COMBAT_TIME:
+        print('Combat round')
+        previousCombatRound = time.time()
+        #Do a combat round
+        for conn in connections:
+            if not isinstance(connections[conn],Player):
+                continue
+            player = connections[conn]
+            if player.inCombat:
+                print('Player in combat')
+                player.attack(rooms)
+                pass
+            else:
+                continue
+        #for mob in mobs:
+            #Do mob combat stuff
     for conn in connections: #Collect any idle connected players, put them in idlePlayers, don't remove from connections yet because iterator
         if isinstance(conn,Server):
             continue
@@ -273,6 +353,8 @@ while True:
                 c.say(connections[client],rooms[connections[client].location],data)
             elif command == 'flee':
                 c.flee(connections[client],data,rooms)
+            elif command == 'me':
+                c.me(connections[client],data,rooms)
             elif command == 'dig':
                 c.dig(rooms[connections[client].location],data,rooms,cursor)
                 db.commit()

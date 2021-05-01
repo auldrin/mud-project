@@ -199,13 +199,20 @@ def flee(player,message,rooms):
 def kill(player, message, rooms):
     message = message.split()[1].capitalize()
     targetFound = False
+    selfFound = False
     #See if the name matches anyone in the room, other than themselves
     for p in rooms[player.location].playerList:
-        if p.name.startswith(message) and not player == p:
+        if p.name.startswith(message):
+            if player == p:
+                selfFound = True
+                continue
             target = p
             targetFound = True
             break
-    if not targetFound:
+    if selfFound and not targetFound:
+        u.send(player.conn,'You can\'t kill yourself.')
+        return
+    elif not targetFound:
         u.send(player.conn,'There\'s nobody by that name here.')
         return
     #check if room is a valid location for combat, I guess?
@@ -228,3 +235,10 @@ def kill(player, message, rooms):
     u.send(player.conn,'You attack ' + target.name + '!')
     u.send(target.conn,player.name + ' attacks you!')
     rooms[player.location].broadcast(player.name + ' attacks ' + target.name +'!',player,target)
+
+def me(player,message,rooms):
+    try:
+        message = message.partition(' ')[2]
+    except KeyError:
+        send(player.conn,'Do what?')
+    rooms[player.location].broadcast(player.name + ' ' + message + '.')
