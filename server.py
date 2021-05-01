@@ -22,9 +22,17 @@ class BaseActor:
         self.name = name
         self.health = 10
         self.maxHealth = 10
-        self.inCombat = False
         self.location = None
         self.target = None
+        self.opponents = []
+        #TODO: Should probably reduce risk of unintended behaviour by replacing inCombat with checks to opponents size
+        self.inCombat = False
+
+class Mob(BaseActor):
+    def __init__(self,name,ID,cursor):
+        super().__init__(name)
+        cursor.execute('SELECT * FROM mobs WHERE ID = %s',(ID))
+        self.db = cursor.fetchone()
 
 class Player(BaseActor):
     def __init__(self,name,conn):

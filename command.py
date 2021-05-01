@@ -11,7 +11,7 @@ def dig(room,message,rooms,cursor):
     name = message.partition(' ')[2] #e.g 'dig west The Place' becomes 'west The Place'
     d,pointlessVar,name = message.partition(' ')[2] #e.g 'west The Place' becomes 'west',' ','The Place'
     desc = 'Default description'
-    west, east, south, north, up, down = None, None, None, None, None, None
+    west, east, south, north, up, down = 0, 0, 0, 0, 0, 0
     if d == 'east':
         west = room.db[REnum.ID.value]
     elif d == 'west':
@@ -173,9 +173,17 @@ def flee(player,message,rooms):
     #Leave the room, end combat and unlock targets
     if success:
         target = random.choice(options)
-        for potentialEnemy in rooms[player.location]:
-            if potentialEnemy.target == player:
-                potentialEnemy.target = None
+        for enemy in player.opponents:
+            enemy.opponents.remove(player)
+            if enemy.target == player:
+                enemy.target = None
+            if not enemy.opponents:
+                enemy.inCombat = False
+            else:
+                enemy.target = enemy.opponents[0]
+        player.opponents = []
+        player.target = None
+        player.inCombat = False
         u.leaveRoom(player,rooms[player.location],u.REnum.get(target[1]),True)
         u.enterRoom(player,rooms[target[0]],u.REnum.get(u.reverseDirection(target[1])))
         look(player,'',rooms)
@@ -185,17 +193,14 @@ def flee(player,message,rooms):
             u.send(player.conn,'You successfully escaped.')
         else:
             u.send(player.conn,'You successfully \'escaped\'.')
-        player.target = None
-        player.inCombat = False
     else:
         u.send(player.conn,'You fail to get away!')
 
 def kill(player, message, rooms):
-    #check validity of target
     message = message.split()[1].capitalize()
     targetFound = False
+    #See if the name matches anyone in the room, other than themselves
     for p in rooms[player.location].playerList:
-        print(message,player.name,p.name)
         if p.name.startswith(message) and not player == p:
             target = p
             targetFound = True
@@ -208,11 +213,18 @@ def kill(player, message, rooms):
     if player.target == target:
         send(player.conn,'You\'re trying as hard as you can!')
         return
+    #If they weren't already, both people are in combat now
     target.inCombat = True
     player.inCombat = True
     player.target = target
     if not target.target:
         target.target = player
+    #It's possible the combatants were already engaged, but focusing different targets. Check that before adding to the opponent lists.
+    if not target in player.opponents:
+        player.opponents.append(target)
+    if not player in target.opponents:
+        target.opponents.append(player)
+    #Tell the attacker, defender, and any bystanders, what's going on.
     u.send(player.conn,'You attack ' + target.name + '!')
     u.send(target.conn,player.name + ' attacks you!')
     rooms[player.location].broadcast(player.name + ' attacks ' + target.name +'!',player,target)
