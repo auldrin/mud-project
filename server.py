@@ -5,6 +5,7 @@ import select
 import mysql.connector
 import room
 import rsa
+import hashlib
 
 import privatekey
 import utility as u
@@ -166,7 +167,6 @@ def receive(sock):
             raise RuntimeError('Socket closed during reading')
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
-    print('Finished receiving data')
     msg = b''.join(chunks)
     msg = rsa.decrypt(msg,PRIVATE_KEY)
     return str(msg,'utf-8')
@@ -188,8 +188,10 @@ def verification(msg,player):
             u.send(connection,"Please select a name with only English letters, maximum 30 characters\n")
             verification[2] = 1
             verification[0] = 0
-
     elif verification[1] == 0: #Player is either setting or entering password, depending on verification[2]
+        m = hashlib.sha256()
+        m.update(bytes(msg,'utf-8'))
+        msg = m.hexdigest()
         if verification[2] == 1:
             cursor.execute("SELECT password FROM players WHERE name = %s;", (verification[0],))
             playerPassword = cursor.fetchone()
@@ -202,8 +204,11 @@ def verification(msg,player):
         else:
             verification[1] = msg
             u.send(connection,"Please re-enter to confirm")
-
     elif verification[2] == 0: #Player is confirming the previously entered password
+        m = hashlib.sha256()
+        m.update(bytes(msg,'utf-8'))
+        msg = m.hexdigest()
+        print(msg)
         if msg == verification[1]:
             u.send(connection,"Welcome to the server.")
             verification[2] = 1
