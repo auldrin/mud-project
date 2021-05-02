@@ -2,6 +2,20 @@ import utility as u
 import random
 import room as r
 
+def quit(player,message,room,cursor):
+    try:
+        confirmation = message.split()[1]
+        if confirmation == 'confirm':
+            player.conn.close()
+            #If room is safe, exit the player instantly. Otherwise, leave them loose.
+            #Only way I can currently think of to cleanly remove the player from the game, unfortunately.
+            player.timer = 99999
+
+    except IndexError:
+        u.send(player.conn,'To quit, type \'quit confirm\'')
+        return
+
+
 def say(player,room,message):
     message = message.partition(' ')[2]
     newMessage = ''.join((player.name,' says \'',message,'\''))
@@ -9,12 +23,9 @@ def say(player,room,message):
     u.send(player.conn,'You say \''+message+'\'')
 
 def dig(room,message,rooms,cursor):
-    #TODO: Replace this with code that works. Partition functionality not as expected.
     message = message.split()
     d = message[1]
     name = ' '.join(message[2:])
-    #name = message.partition(' ')[2] #e.g 'dig west The Place' becomes 'west The Place'
-    #d,pointlessVar,name = message.partition(' ')[2] #e.g 'west The Place' becomes 'west',' ','The Place'
     desc = 'Default description'
     west, east, south, north, up, down = 0, 0, 0, 0, 0, 0
     if d == 'east':
@@ -81,16 +92,16 @@ def link(player,message,rooms,cursor):
     rooms[player.location].update(cursor)
     u.send(player.conn,'Successfully linked rooms')
 
-def editDesc(player,message,rooms,cursor):
+def editDesc(player,message,room,cursor):
     message = message.partition(' ')[2]
     cursor.execute('UPDATE rooms set description = %s WHERE id = %s',(message,player.location))
-    rooms[player.location].update(cursor)
+    room.update(cursor)
     u.send(player.conn,'Successfully edited room description')
 
-def editName(player,message,rooms,cursor):
+def editName(player,message,room,cursor):
     message = message.partition(' ')[2]
     cursor.execute('UPDATE rooms set name = %s WHERE id = %s',(message,player.location))
-    rooms[player.location].update(cursor)
+    room.update(cursor)
     u.send(player.conn,'Successfully edited room name')
 
 def move(player,message,rooms,multi=False):

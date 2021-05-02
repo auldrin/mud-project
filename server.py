@@ -222,7 +222,7 @@ connections = {Server():None}
 loosePlayers = []
 idlePlayers = []
 rooms = {}
-commandList = ('look','kill','chat','say','flee','me','dig','tele','link','editdesc','editname')
+commandList = ('look','kill','chat','say','flee','me','dig','tele','link','editdesc','editname','quit')
 
 ##### Loads the rooms from the database into a dictionary
 cursor.execute('SELECT * FROM rooms')
@@ -279,7 +279,10 @@ while True:
         except AttributeError:
             print('Unverified player disconnected')
         finally:
-            u.send(idlePlayers[0],'You are being disconnected for inactivity, sorry!')
+            try:
+                u.send(idlePlayers[0],'You are being disconnected for inactivity, sorry!')
+            except OSError:
+                pass
             idlePlayers[0].close()
             connections.pop(idlePlayers[0])
             idlePlayers.pop(0)
@@ -352,11 +355,15 @@ while True:
                 c.link(connections[client],data,rooms, cursor)
                 db.commit()
             elif command == 'editdesc':
-                c.editDesc(connections[client],data,rooms,cursor)
+                c.editDesc(connections[client],data,rooms[connections[client].location],cursor)
                 db.commit()
             elif command == 'editname':
-                c.editName(connections[client],data,rooms,cursor)
+                c.editName(connections[client],data,rooms[connections[client].location],cursor)
                 db.commit()
+            elif command == 'quit':
+                c.quit(connections[client],data,rooms[connections[client].location],cursor)
+                db.commit()
+                pass
             continue
         ###################################################################
         #If the player is unverified, attempt to verify using their input
@@ -396,7 +403,7 @@ while True:
                         connectedToExisting = True
                         print('Player being connected to loose body')
                         print(connections[client])
-                        rooms[connections[client].db[PEnum.LOCATION.value]].broadcast(connections[client].name + '\'s soul has returned to their body.',connections[client])
+                        rooms[connections[client].location].broadcast(connections[client].name + '\'s soul has returned to their body.',connections[client])
                         u.send(connections[client].conn,'You have re-entered your body, right where you left it.')
                         break
             if connectedToExisting:
@@ -404,7 +411,12 @@ while True:
             connections[client] = Player(connections[client][0],client) #Make a new player with the verified name
             connections[client].download(cursor)
             print('Verified existing player '+connections[client].name)
-            u.enterRoom(connections[client],rooms[connections[client].location])
+            try:
+                u.enterRoom(connections[client],rooms[connections[client].location])
+            except KeyError:
+                #indicates the room the player logged out in no longer exists
+                u.enterRoom(connections[client],rooms[1])
+            c.look(connections[client],'',rooms)
         elif connections[client][0] != 0 and connections[client][1] != 0 and connections[client][2] != 0: #A new player looks like ['Auldrin',admin,admin,0]
             cursor.execute("INSERT INTO players (name, password, location) VALUES (%s, %s, %s)",(connections[client][0].capitalize(),connections[client][1],1))
             db.commit()

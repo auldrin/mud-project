@@ -73,7 +73,7 @@ def handle_enter(event):
     text = text.strip()
     textInput.delete(0,tk.END)
     output.config(state='normal')
-    output.insert(tk.INSERT,'\n'+text)
+    output.insert(tk.END,'\n'+text)
     output.config(state='disabled')
     send(server.sock,text)
     textHistory.append(text)
@@ -109,6 +109,7 @@ window.protocol("WM_DELETE_WINDOW", on_close)
 
 output = tk.Text(window,background='black',foreground='yellow',width = 100,height=40)
 output.insert(tk.INSERT, "Welcome to the videogames")
+output.config(state='disabled')
 output.grid(row=0,sticky='N')
 
 textInput = tk.Entry(window,width=90)
@@ -153,12 +154,12 @@ while True:
         if incoming:
             try:
                 output.config(state='normal')
-                output.insert(tk.INSERT, '\n'+receive(server.sock))
+                output.insert(tk.END, '\n'+receive(server.sock))
                 output.see(tk.END)
                 output.config(state='disabled')
             except (ConnectionResetError):
                 output.config(state='normal')
-                output.insert(tk.INSERT, '\nConnection reset by server, attempting to reconnect')
+                output.insert(tk.END, '\nConnection reset by server, attempting to reconnect')
                 output.config(state='disabled')
                 server.re_init()
                 server.settimeout(TIMEOUT)
