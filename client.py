@@ -1,12 +1,18 @@
-import socket, select, sys, tkinter as tk
+import socket
+import select
+import sys
+import rsa
+import tkinter as tk
 
 
 HOST = '192.168.2.15'
-#HOST = '156.34.26.195'
 
 PORT = 1024
 HEADER_LENGTH = 10
 TIMEOUT = 0.5
+PUBLIC_KEY = rsa.PublicKey(8690784475986638273169501684600631496204364735975571978984479065400260711317713942995937447441414453404882740955825295713463150916375170938054752742857543, 65537)
+
+
 
 class Server:
     def __init__(self):
@@ -24,6 +30,7 @@ class Server:
 def send(sock,msg):
     #convert to bytes
     msg = bytes(msg,'utf-8')
+    msg = rsa.encrypt(msg,PUBLIC_KEY)
     #assemble fixed length header
     length = bytes(str(len(msg)),'utf-8')
     pad = HEADER_LENGTH-len(length)
@@ -31,7 +38,7 @@ def send(sock,msg):
         length += b' '*pad
     #attach header
     msg = length+msg
-
+    print(length)
 
     totalsent = 0
     while totalsent < len(msg):

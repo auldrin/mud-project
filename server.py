@@ -4,7 +4,9 @@ import socket
 import select
 import mysql.connector
 import room
+import rsa
 
+import privatekey
 import utility as u
 import command as c
 import settings
@@ -14,6 +16,7 @@ PORT = settings.PORT
 
 HEADER_LENGTH = settings.HEADER_LENGTH
 IDLE_TIMER = settings.IDLE_TIMER
+PRIVATE_KEY = rsa.PrivateKey(privatekey.PRIVATE_KEY[0],privatekey.PRIVATE_KEY[1],privatekey.PRIVATE_KEY[2],privatekey.PRIVATE_KEY[3],privatekey.PRIVATE_KEY[4])
 
 db = mysql.connector.connect(host='localhost',user='root',password='admin',database="mydatabase")
 cursor = db.cursor()
@@ -163,7 +166,10 @@ def receive(sock):
             raise RuntimeError('Socket closed during reading')
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
-    return str(b''.join(chunks),'utf-8')
+    print('Finished receiving data')
+    msg = b''.join(chunks)
+    msg = rsa.decrypt(msg,PRIVATE_KEY)
+    return str(msg,'utf-8')
 
 def verification(msg,player):
     verification = player[1]
