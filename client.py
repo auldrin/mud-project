@@ -3,17 +3,14 @@ import select
 import sys
 import rsa
 import tkinter as tk
-
+from tkinter import font as tkFont
 
 HOST = '192.168.2.15'
 
 PORT = 1024
 HEADER_LENGTH = 10
 TIMEOUT = 0.5
-PUBLIC_KEY = rsa.PublicKey(8690784475986638273169501684600631496204364735975571978984479065400260711317713942995937447441414453404882740955825295713463150916375170938054752742857543, 65537)
-
-
-
+PUBLIC_KEY = rsa.PublicKey(25225735533549590446154239934719976934564125485812868128664974319512400129448962900647860261364657347374200184501646862047716180620318795937656111092231004743228245673403201831418447465807627542356795291999638304626843013111414452018310445683427977755671257614629164865516160854280416179725923473446697801971823478617336942118730805390658888069242890374893259399375525097648546984418979507509110342128547444918265845898987465653727381056773086043649181402614557848636666664040623462583388296567481199738407416110407148170802467959298026142070547049090254980267235402311098734078328443321816391254798054871666346200741, 65537)
 class Server:
     def __init__(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -80,7 +77,7 @@ def handle_enter(event):
     text = text.strip()
     textInput.delete(0,tk.END)
     output.config(state='normal')
-    output.insert(tk.END,'\n'+text)
+    output.insert(tk.END,'\n'+text,"italic")
     output.config(state='disabled')
     send(server.sock,text)
     textHistory.append(text)
@@ -114,10 +111,17 @@ window.bind('<Up>',history_up)
 window.bind('<Down>',history_down)
 window.protocol("WM_DELETE_WINDOW", on_close)
 
+
 output = tk.Text(window,background='black',foreground='yellow',width = 100,height=40)
 output.insert(tk.INSERT, "Welcome to the videogames")
+output.append("Welcome to the videogames")
 output.config(state='disabled')
 output.grid(row=0,sticky='N')
+
+default_font = tkFont.nametofont(output.cget("font"))
+italic_font = tkFont.Font(**default_font.configure())
+italic_font.configure(slant="italic")
+output.tag_configure("italic",font=italic_font)
 
 textInput = tk.Entry(window,width=90)
 textInput.grid(sticky='S',row=1)

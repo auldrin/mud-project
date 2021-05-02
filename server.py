@@ -43,7 +43,7 @@ class BaseActor:
         self.baseAttackBonus = 0
         self.armourClass = 10
 
-        self.damage = {3:1}
+        self.damage = {6:2}
         self.damageType = 'subdual'
 
 class Mob(BaseActor):
@@ -78,10 +78,11 @@ class Player(BaseActor):
             print('attempted attack')
             roll = random.randint(1,20)
             rollTotal = self.baseAttackBonus + roll
+            damageTotal = 0
             if rollTotal > self.target.armourClass:
                 for key in self.damage.keys():
                     for die in range(self.damage[key]):
-                        damageTotal = random.randint(1,key)
+                        damageTotal += random.randint(1,key)
                         print('Rolled ',self.damage[key],'d',key)
                 u.send(self.conn,'['+str(rollTotal)+','+str(damageTotal)+'] You hit ' + self.target.name + ' with your attack!')
                 u.send(self.target.conn,'['+str(rollTotal)+','+str(damageTotal)+'] '+self.name + ' lands a blow against you!')
@@ -100,24 +101,30 @@ class Player(BaseActor):
             self.nonLethalDamage += damage
         else:
             self.health -= damage
-
         if self.health < 0 or self.nonLethalDamage > self.health:
-            #die
-            rooms[self.location].broadcast(self.name+' falls to the ground, dead.',self)
-            u.send(self.conn,'You are dead!')
-            self.inCombat = False
-            while self.opponents:
-                self.opponents[0].opponents.remove(self)
-                if self.opponents[0].target == self:
-                    if self.opponents[0].opponents:
-                        self.opponents[0].target = self.opponents[0].opponents[0]
-                    else:
-                        self.opponents[0].inCombat = False
-                self.opponents.pop(0)
-            self.target = None
-            u.leaveRoom(self,rooms[self.location],dead=True)
-            u.enterRoom(self,rooms[1],None,True)
-            self.health = self.maxHealth
+            self.die(rooms)
+
+    def die(self,rooms):
+        rooms[self.location].broadcast(self.name+' falls to the ground, dead.',self)
+        u.send(self.conn,'You are dead!')
+        self.inCombat = False
+        while self.opponents:
+            print('Opponent:',self.opponents[0].name)
+            self.opponents[0].opponents.remove(self)
+            if self.opponents[0].target == self:
+                print('Opponent is targetting dead player')
+                if self.opponents[0].opponents:
+                    print('Opponent has other living targets, switching')
+                    self.opponents[0].target = self.opponents[0].opponents[0]
+                else:
+                    print('Opponent has no other living targets, ending combat')
+                    self.opponents[0].inCombat = False
+                    self.opponents[0].target = None
+            self.opponents.pop(0)
+        self.target = None
+        u.leaveRoom(self,rooms[self.location],dead=True)
+        u.enterRoom(self,rooms[1],None,True)
+        self.health = self.maxHealth
 
 class Server:
     def __init__(self):
