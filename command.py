@@ -1,5 +1,6 @@
 import utility as u
 import random
+import room as r
 
 def say(player,room,message):
     message = message.partition(' ')[2]
@@ -8,22 +9,26 @@ def say(player,room,message):
     u.send(player.conn,'You say \''+message+'\'')
 
 def dig(room,message,rooms,cursor):
-    name = message.partition(' ')[2] #e.g 'dig west The Place' becomes 'west The Place'
-    d,pointlessVar,name = message.partition(' ')[2] #e.g 'west The Place' becomes 'west',' ','The Place'
+    #TODO: Replace this with code that works. Partition functionality not as expected.
+    message = message.split()
+    d = message[1]
+    name = ' '.join(message[2:])
+    #name = message.partition(' ')[2] #e.g 'dig west The Place' becomes 'west The Place'
+    #d,pointlessVar,name = message.partition(' ')[2] #e.g 'west The Place' becomes 'west',' ','The Place'
     desc = 'Default description'
     west, east, south, north, up, down = 0, 0, 0, 0, 0, 0
     if d == 'east':
-        west = room.db[REnum.ID.value]
+        west = room.db[u.REnum['ID']]
     elif d == 'west':
-        east = room.db[REnum.ID.value]
+        east = room.db[u.REnum['ID']]
     elif d == 'north':
-        south = room.db[REnum.ID.value]
+        south = room.db[u.REnum['ID']]
     elif d == 'south':
-        north = room.db[REnum.ID.value]
+        north = room.db[u.REnum['ID']]
     elif d == 'down':
-        up = room.db[REnum.ID.value]
+        up = room.db[u.REnum['ID']]
     elif d == 'up':
-        down = room.db[REnum.ID.value]
+        down = room.db[u.REnum['ID']]
     #Save the room as the newest entry in the room table
     cursor.execute('INSERT INTO rooms (name, east, west, north, south, up, down, description) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)',
     (name,east,west,north,south,up,down,desc))
@@ -32,9 +37,9 @@ def dig(room,message,rooms,cursor):
     newID = cursor.fetchone()
     #Use that ID to download the room from the database and add it to the rooms dict
     cursor.execute('SELECT * FROM rooms WHERE id = %s',(newID))
-    rooms[newID[0]] = Room(cursor.fetchone())
+    rooms[newID[0]] = r.Room(cursor.fetchone())
     #Set the appropriate direction in the previous room to connect to this new room
-    cursor.execute('UPDATE rooms SET '+ d +' = %s WHERE id = %s',(newID[0],room.db[REnum.ID.value]))
+    cursor.execute('UPDATE rooms SET '+ d +' = %s WHERE id = %s',(newID[0],room.db[u.REnum['ID']]))
     #db.commit()
     #Update the origin room to reflect the new link
     room.update(cursor)
@@ -73,21 +78,18 @@ def link(player,message,rooms,cursor):
     except:
         u.send(player.conn,'Invalid usage, try: \'link west 1\' format instead.')
         return
-    #db.commit()
     rooms[player.location].update(cursor)
     u.send(player.conn,'Successfully linked rooms')
 
 def editDesc(player,message,rooms,cursor):
     message = message.partition(' ')[2]
     cursor.execute('UPDATE rooms set description = %s WHERE id = %s',(message,player.location))
-    #db.commit()
     rooms[player.location].update(cursor)
     u.send(player.conn,'Successfully edited room description')
 
 def editName(player,message,rooms,cursor):
     message = message.partition(' ')[2]
     cursor.execute('UPDATE rooms set name = %s WHERE id = %s',(message,player.location))
-    #db.commit()
     rooms[player.location].update(cursor)
     u.send(player.conn,'Successfully edited room name')
 
@@ -104,7 +106,7 @@ def move(player,message,rooms,multi=False):
                 u.send(player.conn,'There\'s nothing that way')
                 continue
             u.leaveRoom(player,rooms[player.location],d) #Inform the room and its players that the player is departing
-            u.enterRoom(player,destination,u.REnum.get(u.reverseDirection(u.convertStringToRoomEnum(d)))) #convert east to the enum key, then flip it and convert it back
+            u.enterRoom(player,destination,u.REnumGet(u.reverseDirection(u.convertStringToRoomEnum(d)))) #convert east to the enum key, then flip it and convert it back
             look(player,'',rooms)
     else: #message will be, for example, 'east'
         try:
@@ -113,7 +115,7 @@ def move(player,message,rooms,multi=False):
             u.send(player.conn,'There\'s nothing that way')
             return
         u.leaveRoom(player,rooms[player.location],message)
-        u.enterRoom(player,destination,u.REnum.get(u.reverseDirection(u.convertStringToRoomEnum(message)))) #convert east to an enum key, then reverse it
+        u.enterRoom(player,destination,u.REnumGet(u.reverseDirection(u.convertStringToRoomEnum(message)))) #convert east to an enum key, then reverse it
         look(player,'',rooms)
 
 def look(player,message,rooms):
@@ -137,9 +139,9 @@ def look(player,message,rooms):
     players = []
     for x in range(2,8):
         if room.db[x]:
-            directions.append(u.REnum.get(x))
+            directions.append(u.REnumGet(x))
 
-    message = '\n'.join((room.db[u.REnum.NAME.value], room.db[u.REnum.DESCRIPTION.value],))
+    message = '\n'.join((room.db[u.REnum['NAME']], room.db[u.REnum['DESCRIPTION']],))
     for p in room.playerList:
         if p.name == player.name:
             continue
@@ -184,8 +186,8 @@ def flee(player,message,rooms):
         player.opponents = []
         player.target = None
         player.inCombat = False
-        u.leaveRoom(player,rooms[player.location],u.REnum.get(target[1]),True)
-        u.enterRoom(player,rooms[target[0]],u.REnum.get(u.reverseDirection(target[1])))
+        u.leaveRoom(player,rooms[player.location],u.REnumGet(target[1]),True)
+        u.enterRoom(player,rooms[target[0]],u.REnumGet(u.reverseDirection(target[1])))
         look(player,'',rooms)
         if player.target:
             u.send(player.conn,'You successfully escaped ' + player.target.name)
@@ -218,7 +220,7 @@ def kill(player, message, rooms):
     #check if room is a valid location for combat, I guess?
     #
     if player.target == target:
-        send(player.conn,'You\'re trying as hard as you can!')
+        u.send(player.conn,'You\'re trying as hard as you can!')
         return
     #If they weren't already, both people are in combat now
     target.inCombat = True

@@ -1,22 +1,35 @@
 from enum import Enum
 import settings as s
 
+REnum = {'ID':0,
+        'NAME':1,
+        'EAST':2,
+        'WEST':3,
+        'NORTH':4,
+        'SOUTH':5,
+        'UP':6,
+        'DOWN':7,
+        'DESCRIPTION':8}
+def REnumGet(number):
+    #For when you have a number corresponding to a direction (2 through 7) but need a string for the direction
+    #return REnum.keys()[REnum.values().index(number)]
+    return list(REnum.keys())[list(REnum.values()).index(number)]
 
-class REnum(Enum):
-    #Enumerater which tells you where to look in a room db to find specific things
-    ID = 0
-    NAME = 1
-    EAST = 2
-    WEST = 3
-    NORTH = 4
-    SOUTH = 5
-    UP = 6
-    DOWN = 7
-    DESCRIPTION = 8
-
-    def get(number):
-        #For when you have a number corresponding to a direction (2 through 7) but need a string for the direction
-        return REnum(number).name
+#class REnum(Enum):
+#    #Enumerater which tells you where to look in a room db to find specific things
+#    ID = 0
+#    NAME = 1
+#    EAST = 2
+#    WEST = 3
+#    NORTH = 4
+#    SOUTH = 5
+#    UP = 6
+#    DOWN = 7
+#    DESCRIPTION = 8
+#
+#    def get(number):
+#        #For when you have a number corresponding to a direction (2 through 7) but need a string for the direction
+#        return REnum(number).name
 
 class PEnum(Enum):
     #Same as REnum but for rooms
@@ -39,17 +52,17 @@ def reverseDirection(key):
 def convertStringToRoomEnum(string):
     #When you have a direction string, and need a number for it
     if string == 'east':
-        return REnum.EAST.value
+        return REnum['EAST']
     elif string == 'west':
-        return REnum.WEST.value
+        return REnum['WEST']
     elif string == 'south':
-        return REnum.SOUTH.value
+        return REnum['SOUTH']
     elif string == 'north':
-        return REnum.NORTH.value
+        return REnum['NORTH']
     elif string == 'up':
-        return REnum.UP.value
+        return REnum['UP']
     elif string == 'down':
-        return REnum.DOWN.value
+        return REnum['DOWN']
     else:
         return None
 
@@ -96,7 +109,7 @@ def enterRoom(player,room,direction=None,revive=None):
     #Changes player location and informs the new room of the arrival. Always call in a pair with leaveRoom, unless logging in/out
     if direction:
         direction = direction.lower()
-    player.location = room.db[REnum.ID.value]
+    player.location = room.db[REnum['ID']]
     room.playerList.append(player)
     if revive:
         room.broadcast(player.name + ' returns from the dead in an explosion of divine radiance.',player)
@@ -131,7 +144,7 @@ def leaveRoom(player,room,direction=None,flee=None,dead=None):
         mode = 'left'
     if direction:
         if direction == 'up':
-            message += ' has ' + mode + 'upwards.'
+            message += ' has ' + mode + ' upwards.'
         elif direction == 'down':
             message += ' has ' + mode + ' downwards.'
         else:

@@ -3,6 +3,7 @@ import random
 import socket
 import select
 import mysql.connector
+import room
 
 import utility as u
 import command as c
@@ -20,6 +21,7 @@ cursor = db.cursor()
 class Weapon:
     def __init__(self,name):
         self.name = name
+        #TODO: get weapon from database using its name
         self.damage = {6:2}
         self.damageType = 'slashing'
 
@@ -28,15 +30,15 @@ class BaseActor:
         self.name = name
         self.health = 10
         self.maxHealth = 10
+        self.nonLethalDamage = 0
         self.location = None
         self.target = None
         self.opponents = []
         #TODO: Consider whether to phase out inCombat. It is faster than checking opponents size.
         self.inCombat = False
-
         self.baseAttackBonus = 0
         self.armourClass = 10
-        self.nonLethalDamage = 0
+
         self.damage = {3:1}
         self.damageType = 'subdual'
 
@@ -85,6 +87,9 @@ class Player(BaseActor):
                 u.send(self.conn,'[' + str(rollTotal) + '] You miss ' + self.target.name + ' with your attack!')
                 u.send(self.target.conn,'['+str(rollTotal)+']'+self.name + ' misses you with their attack!')
                 rooms[self.location].broadcast(self.name+' misses '+self.target.name+' with an attack!',self,self.target)
+            #Players with multiple attacks could easily end up killing their enemy in the middle of a flurry
+            if not self.target:
+                break
 
     def takeDamage(self,damage,dType,attacker,rooms):
         if dType == 'subdual':
@@ -108,22 +113,7 @@ class Player(BaseActor):
             self.target = None
             u.leaveRoom(self,rooms[self.location],dead=True)
             u.enterRoom(self,rooms[1],None,True)
-
-class Room:
-    def __init__(self,db):
-        self.db = db
-        self.playerList = []
-
-    def broadcast(self,message,exceptPlayer=None,exceptOther=None): #Send a message to all players in the room, optionally exclude up to two players
-        for player in self.playerList:
-            if player == exceptPlayer or player==exceptOther:
-                continue
-            else:
-                u.send(player.conn,message)
-
-    def update(self,cursor):
-        cursor.execute('SELECT * FROM rooms WHERE id = %s',(self.db[u.REnum.ID.value],))
-        self.db = cursor.fetchone()
+            self.health = self.maxHealth
 
 class Server:
     def __init__(self):
@@ -238,7 +228,7 @@ commandList = ('look','kill','chat','say','flee','me','dig','tele','link','editd
 cursor.execute('SELECT * FROM rooms')
 result = cursor.fetchall()
 for roomEntry in result:
-    rooms[roomEntry[u.REnum.ID.value]] = Room(roomEntry)
+    rooms[roomEntry[u.REnum['ID']]] = room.Room(roomEntry)
 print(len(rooms),'rooms loaded successfully.')
 #####
 
@@ -254,7 +244,6 @@ while True:
     timeSinceCombatRound = timeNow - previousCombatRound
     #TODO: Decide how often mobs act. Could be just each combat round, or they could be on a 3 second timer or something.
     if timeSinceCombatRound >= settings.COMBAT_TIME:
-        print('Combat round')
         previousCombatRound = time.time()
         #Do a combat round
         for conn in connections:
@@ -262,7 +251,6 @@ while True:
                 continue
             player = connections[conn]
             if player.inCombat:
-                print('Player in combat')
                 player.attack(rooms)
                 pass
             else:

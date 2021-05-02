@@ -2,9 +2,11 @@ import socket, select, sys, tkinter as tk
 
 
 HOST = '192.168.2.15'
+#HOST = '156.34.26.195'
 
 PORT = 1024
 HEADER_LENGTH = 10
+TIMEOUT = 0.5
 
 class Server:
     def __init__(self):
@@ -123,7 +125,7 @@ textInput.focus()
 
 
 server = Server()
-server.settimeout(0.3)
+server.settimeout(TIMEOUT)
 output.config(state='normal')
 output.insert(tk.INSERT, "\nConnecting to server...")
 output.config(state='disabled')
@@ -141,7 +143,7 @@ while True:
             break
         except (socket.timeout,ConnectionRefusedError):
             server.re_init()
-            server.settimeout(0.3)
+            server.settimeout(TIMEOUT)
             window.update()
             continue
 
@@ -159,7 +161,7 @@ while True:
                 output.insert(tk.INSERT, '\nConnection reset by server, attempting to reconnect')
                 output.config(state='disabled')
                 server.re_init()
-                server.settimeout(0.3)
+                server.settimeout(TIMEOUT)
                 break
         elif error:
             print('Shit\'s fucked')
