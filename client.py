@@ -114,7 +114,6 @@ window.protocol("WM_DELETE_WINDOW", on_close)
 
 output = tk.Text(window,background='black',foreground='yellow',width = 100,height=40)
 output.insert(tk.INSERT, "Welcome to the videogames")
-output.append("Welcome to the videogames")
 output.config(state='disabled')
 output.grid(row=0,sticky='N')
 

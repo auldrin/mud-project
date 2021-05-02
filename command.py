@@ -234,8 +234,13 @@ def kill(player, message, rooms):
         u.send(player.conn,'You\'re trying as hard as you can!')
         return
     #If they weren't already, both people are in combat now
-    target.inCombat = True
-    player.inCombat = True
+    if not player.inCombat:
+        player.initiativeTotal = player.initiativeBonus + random.randint(1,20)
+        player.inCombat = True
+    if not target.inCombat:
+        target.initiativeTotal = target.initiativeBonus + random.randint(1,20)
+        target.inCombat = True
+
     player.target = target
     if not target.target:
         target.target = player

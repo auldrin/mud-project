@@ -22,12 +22,22 @@ PRIVATE_KEY = rsa.PrivateKey(privatekey.PRIVATE_KEY[0],privatekey.PRIVATE_KEY[1]
 db = mysql.connector.connect(host='localhost',user='root',password='admin',database="mydatabase")
 cursor = db.cursor()
 
-class Weapon:
+class Item:
     def __init__(self,name):
         self.name = name
+        #TODO: get item details from database using name
+        self.weight = 1.0
+
+class Weapon(Item):
+    def __init__(self,name):
+        super().__init__(name)
         #TODO: get weapon from database using its name
         self.damage = {6:2}
         self.damageType = 'slashing'
+
+def getInit(actor):
+    return actor.initiativeTotal
+
 
 class BaseActor:
     def __init__(self,name):
@@ -42,6 +52,8 @@ class BaseActor:
         self.inCombat = False
         self.baseAttackBonus = 0
         self.armourClass = 10
+        self.initiativeBonus = 0
+        self.initiativeTotal = 0
 
         self.damage = {6:2}
         self.damageType = 'subdual'
@@ -51,6 +63,14 @@ class Mob(BaseActor):
         super().__init__(name)
         cursor.execute('SELECT * FROM mobs WHERE ID = %s',(ID))
         self.db = cursor.fetchone()
+
+    def takeDamage(self,damage,dType,attacker,rooms):
+        if dType == 'subdual':
+            self.nonLethalDamage += damage
+        else:
+            self.health -= damage
+        if self.health < 0 or self.nonLethalDamage > self.health:
+            self.die(rooms)
 
 class Player(BaseActor):
     def __init__(self,name,conn):
@@ -75,7 +95,6 @@ class Player(BaseActor):
             attackCount = 1
 
         for a in range(attackCount):
-            print('attempted attack')
             roll = random.randint(1,20)
             rollTotal = self.baseAttackBonus + roll
             damageTotal = 0
@@ -83,7 +102,6 @@ class Player(BaseActor):
                 for key in self.damage.keys():
                     for die in range(self.damage[key]):
                         damageTotal += random.randint(1,key)
-                        print('Rolled ',self.damage[key],'d',key)
                 u.send(self.conn,'['+str(rollTotal)+','+str(damageTotal)+'] You hit ' + self.target.name + ' with your attack!')
                 u.send(self.target.conn,'['+str(rollTotal)+','+str(damageTotal)+'] '+self.name + ' lands a blow against you!')
                 rooms[self.location].broadcast(self.name+' lands a blow against '+self.target.name+'!',self,self.target)
@@ -96,30 +114,24 @@ class Player(BaseActor):
             if not self.target:
                 break
 
-    def takeDamage(self,damage,dType,attacker,rooms):
-        if dType == 'subdual':
-            self.nonLethalDamage += damage
-        else:
-            self.health -= damage
-        if self.health < 0 or self.nonLethalDamage > self.health:
-            self.die(rooms)
-
     def die(self,rooms):
         rooms[self.location].broadcast(self.name+' falls to the ground, dead.',self)
         u.send(self.conn,'You are dead!')
         self.inCombat = False
+        #TODO: consider moving the following code to a function somewhere. It'll also be needed by flee and other combat escape code.
+        #Iterate through the list of people the player is in combat with
         while self.opponents:
-            print('Opponent:',self.opponents[0].name)
+            #Remove the player from the opponents' opponent list
             self.opponents[0].opponents.remove(self)
             if self.opponents[0].target == self:
-                print('Opponent is targetting dead player')
+                #If the enemy has other potential targets, it switches and keeps fighting
                 if self.opponents[0].opponents:
-                    print('Opponent has other living targets, switching')
                     self.opponents[0].target = self.opponents[0].opponents[0]
+                #Otherwise, it is no longer in combat and has no target
                 else:
-                    print('Opponent has no other living targets, ending combat')
                     self.opponents[0].inCombat = False
                     self.opponents[0].target = None
+            #Remove the opponent from the player's opponent list
             self.opponents.pop(0)
         self.target = None
         u.leaveRoom(self,rooms[self.location],dead=True)
@@ -264,17 +276,15 @@ while True:
     if timeSinceCombatRound >= settings.COMBAT_TIME:
         previousCombatRound = time.time()
         #Do a combat round
-        for conn in connections:
-            if not isinstance(connections[conn],Player):
-                continue
-            player = connections[conn]
-            if player.inCombat:
-                player.attack(rooms)
-                pass
-            else:
-                continue
-        #for mob in mobs:
-            #Do mob combat stuff
+        for room in rooms.values():
+            #sort playerlist by initiative
+            room.playerList.sort(key=getInit)
+            print(room.playerList)
+            for player in room.playerList:
+                if player.inCombat:
+                    print(player.name,player.initiativeTotal)
+                    player.attack(rooms)
+
     for conn in connections: #Collect any idle connected players, put them in idlePlayers, don't remove from connections yet because iterator
         if isinstance(conn,Server):
             continue
