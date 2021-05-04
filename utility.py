@@ -15,31 +15,25 @@ def REnumGet(number):
     #return REnum.keys()[REnum.values().index(number)]
     return list(REnum.keys())[list(REnum.values()).index(number)]
 
-#class REnum(Enum):
-#    #Enumerater which tells you where to look in a room db to find specific things
-#    ID = 0
-#    NAME = 1
-#    EAST = 2
-#    WEST = 3
-#    NORTH = 4
-#    SOUTH = 5
-#    UP = 6
-#    DOWN = 7
-#    DESCRIPTION = 8
-#
-#    def get(number):
-#        #For when you have a number corresponding to a direction (2 through 7) but need a string for the direction
-#        return REnum(number).name
+PEnum = {'ID':0,
+        'NAME':1,
+        'PASSWORD':2,
+        'LOCATION':3,
+        'RACE':4,
+        'STRENGTH':5,
+        'DEXTERITY':6,
+        'CONSTITUTION':7,
+        'WISDOM':8,
+        'INTELLIGENCE':9,
+        'CHARISMA':10}
 
-class PEnum(Enum):
-    #Same as REnum but for rooms
-    ID = 0
-    NAME = 1
-    PASSWORD = 2
-    LOCATION = 3
-    def get(number):
-        #Probably useless
-        return PEnum(number).name
+RACEnum = {'NAME':0,
+            'STRENGTH':1,
+            'DEXTERITY':2,
+            'CONSTITUTION':3,
+            'WISDOM':4,
+            'INTELLIGENCE':5,
+            'CHARISMA':6}
 
 def reverseDirection(key):
     #For when you have a number corresponding to a direction, and want a number for the opposite direction

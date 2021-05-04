@@ -57,12 +57,9 @@ class BaseActor:
 
         self.damage = {6:2}
         self.damageType = 'subdual'
-
-class Mob(BaseActor):
-    def __init__(self,name,ID,cursor):
-        super().__init__(name)
-        cursor.execute('SELECT * FROM mobs WHERE ID = %s',(ID))
-        self.db = cursor.fetchone()
+        self.attributes = {'strength':10,'dexterity':10,'constitution':10,'wisdom':10,'intelligence':10,'charisma':10}
+        self.attributesTotal = {}
+        self.raceName = 'non-specific'
 
     def takeDamage(self,damage,dType,attacker,rooms):
         if dType == 'subdual':
@@ -71,6 +68,29 @@ class Mob(BaseActor):
             self.health -= damage
         if self.health < 0 or self.nonLethalDamage > self.health:
             self.die(rooms)
+
+    def healthCheck(self): #Return a text descriptor depending on health. TODO: Enemies with unusual anatomy should be damaged, not wounded.
+        condition = self.health/self.maxHealth
+        if condition == 1:
+            return 'in pristine condition'
+        elif condition > 0.8:
+            return 'lightly wounded'
+        elif condition > 0.6:
+            return 'moderately wounded'
+        elif condition > 0.4:
+            return 'seriously wounded'
+        elif condition > 0.2:
+            return 'critically wounded'
+        else:
+            return 'on the brink of death'
+
+class Mob(BaseActor):
+    def __init__(self,name,ID,cursor):
+        super().__init__(name)
+        cursor.execute('SELECT * FROM mobs WHERE ID = %s',(ID))
+        self.db = cursor.fetchone()
+        self.race = 'non-specific'
+
 
 class Player(BaseActor):
     def __init__(self,name,conn):
@@ -85,8 +105,23 @@ class Player(BaseActor):
     def download(self,cursor):
         cursor.execute("SELECT * FROM players WHERE name = %s",(self.name,))
         self.db = cursor.fetchone()
-        self.name = self.db[u.PEnum.NAME.value]
-        self.location = self.db[u.PEnum.LOCATION.value]
+        self.name = self.db[u.PEnum['NAME']]
+        self.location = self.db[u.PEnum['LOCATION']]
+        self.race = self.db[u.PEnum['RACE']]
+        self.attributes['strength'] = self.db[u.PEnum['STRENGTH']]
+        self.attributes['dexterity'] = self.db[u.PEnum['DEXTERITY']]
+        self.attributes['constitution'] = self.db[u.PEnum['CONSTITUTION']]
+        self.attributes['wisdom'] = self.db[u.PEnum['WISDOM']]
+        self.attributes['intelligence'] = self.db[u.PEnum['INTELLIGENCE']]
+        self.attributes['charisma'] = self.db[u.PEnum['CHARISMA']]
+        cursor.execute("SELECT * FROM races WHERE name = %s",(self.race,))
+        race = cursor.fetchone()
+        self.attributesTotal['strength'] = self.attributes['strength'] + race[u.RACEnum['STRENGTH']]
+        self.attributesTotal['dexterity'] = self.attributes['dexterity'] + race[u.RACEnum['DEXTERITY']]
+        self.attributesTotal['constitution'] = self.attributes['constitution'] + race[u.RACEnum['CONSTITUTION']]
+        self.attributesTotal['wisdom'] = self.attributes['wisdom'] + race[u.RACEnum['WISDOM']]
+        self.attributesTotal['intelligence'] = self.attributes['intelligence'] + race[u.RACEnum['INTELLIGENCE']]
+        self.attributesTotal['charisma'] = self.attributes['charisma'] + race[u.RACEnum['CHARISMA']]
 
     def attack(self,rooms):
         try:
@@ -96,12 +131,14 @@ class Player(BaseActor):
 
         for a in range(attackCount):
             roll = random.randint(1,20)
-            rollTotal = self.baseAttackBonus + roll
+            #TODO: Pre-calculate all attribute modifiers somewhere, then make sure they stay updated
+            rollTotal = roll + self.baseAttackBonus + self.attributesTotal['strength']//2 - 5
             damageTotal = 0
-            if rollTotal > self.target.armourClass:
+            if rollTotal > self.target.armourClass + self.target.attributesTotall['dexterity']//2 - 5:
                 for key in self.damage.keys():
                     for die in range(self.damage[key]):
                         damageTotal += random.randint(1,key)
+                damageTotal += self.attributesTotal['strength']//2 - 5
                 u.send(self.conn,'['+str(rollTotal)+','+str(damageTotal)+'] You hit ' + self.target.name + ' with your attack!')
                 u.send(self.target.conn,'['+str(rollTotal)+','+str(damageTotal)+'] '+self.name + ' lands a blow against you!')
                 rooms[self.location].broadcast(self.name+' lands a blow against '+self.target.name+'!',self,self.target)
@@ -137,6 +174,7 @@ class Player(BaseActor):
         u.leaveRoom(self,rooms[self.location],dead=True)
         u.enterRoom(self,rooms[1],None,True)
         self.health = self.maxHealth
+        self.nonLethalDamage = 0
 
 class Server:
     def __init__(self):
@@ -252,7 +290,7 @@ connections = {Server():None}
 loosePlayers = []
 idlePlayers = []
 rooms = {}
-commandList = ('look','kill','chat','say','flee','me','dig','tele','link','editdesc','editname','quit')
+commandList = ('look','kill','chat','say','flee','me','dig','tele','link','editdesc','editname','quit','character','sheet')
 
 ##### Loads the rooms from the database into a dictionary
 cursor.execute('SELECT * FROM rooms')
@@ -368,6 +406,8 @@ while True:
                 c.chat(connections[client],data,connections)
             elif command == 'look':
                 c.look(connections[client],data,rooms)
+            elif command == 'character' or command == 'sheet':
+                c.characterSheet(connections[client])
             elif command == 'say':
                 c.say(connections[client],rooms[connections[client].location],data)
             elif command == 'flee':
@@ -446,7 +486,7 @@ while True:
                 u.enterRoom(connections[client],rooms[1])
             c.look(connections[client],'',rooms)
         elif connections[client][0] != 0 and connections[client][1] != 0 and connections[client][2] != 0: #A new player looks like ['Auldrin',admin,admin,0]
-            cursor.execute("INSERT INTO players (name, password, location) VALUES (%s, %s, %s)",(connections[client][0].capitalize(),connections[client][1],1))
+            cursor.execute("INSERT INTO players (name, password) VALUES (%s, %s)",(connections[client][0].capitalize(),connections[client][1]))
             db.commit()
             connections[client] = Player(connections[client][0],client)
             connections[client].download(cursor)

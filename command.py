@@ -133,8 +133,15 @@ def look(player,message,rooms):
     room = rooms[player.location]
     try:
         arg = message.split()[1]
+        for p in room.playerList:
+            if p.name.startswith(arg.capitalize()):
+                lookAtPlayer(player,p)
+                return
+        if arg == 'self':
+            lookAtPlayer(player,player)
     except IndexError: #Triggered by message only containing one word, just means doing a default look
         pass
+
     try:
         key = u.convertStringToRoomEnum(arg)
         room = rooms[room.db[key]]
@@ -260,3 +267,38 @@ def me(player,message,rooms):
     except KeyError:
         send(player.conn,'Do what?')
     rooms[player.location].broadcast(player.name + ' ' + message + '.')
+
+def lookAtPlayer(viewer, target):
+    if target.inCombat:
+        message = target.name + ' is locked in battle against ' + target.target.name + '.\n'
+    else:
+        message = target.name + ' is standing here.\n'
+    message += target.name
+    if target.race[0] in 'aeio':
+        message += ' is an '
+    else:
+        message += ' is a '
+    message += target.race + '.\n'
+    message += target.name + ' is ' + target.healthCheck() + '.'
+    u.send(viewer.conn,message)
+
+def characterSheet(player):
+    #The name
+    message = 'You are ' + player.name
+    #The race
+    if player.race[0] in 'aeio':
+        message += ', an '
+    else:
+        message += ', a '
+    message += player.race + '.\n'
+    #level/class?
+    #Health
+    message += 'Hitpoints: ' + str(player.health) + '/' + str(player.maxHealth)
+    #Attributes
+    for attr in player.attributes.keys():
+        message += '\n' + attr + ': ' + str(player.attributesTotal[attr])
+    #Saves
+    #Skills
+    #Other stuff?
+    #send
+    u.send(player.conn,message)

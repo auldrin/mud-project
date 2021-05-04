@@ -175,7 +175,7 @@ while True:
                 server.settimeout(TIMEOUT)
                 break
         elif error:
-            print('Shit\'s fucked')
+            print('Panic')
         window.update_idletasks()
         window.update()
 
