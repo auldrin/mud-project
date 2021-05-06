@@ -10,7 +10,7 @@ class Room:
             if player == exceptPlayer or player==exceptOther:
                 continue
             else:
-                u.send(player.conn,message)
+                u.send(player.conn,message,player.key)
 
     def update(self,cursor):
         cursor.execute('SELECT * FROM rooms WHERE id = %s',(self.db[u.REnum['ID']],))

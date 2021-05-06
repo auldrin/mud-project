@@ -94,11 +94,12 @@ class Mob(BaseActor):
 
 
 class Player(BaseActor):
-    def __init__(self,name,conn):
+    def __init__(self,name,conn,cryptoKey):
         super().__init__(name)
         self.db = None
         self.timer = 0.0
         self.conn = conn
+        self.key = cryptoKey
 
     def upload(self,cursor):
         cursor.execute('UPDATE players SET location = %s WHERE name = %s',(self.location,self.name))
@@ -140,13 +141,13 @@ class Player(BaseActor):
                     for die in range(self.damage[key]):
                         damageTotal += random.randint(1,key)
                 damageTotal += self.attributesTotal['strength']//2 - 5
-                u.send(self.conn,'['+str(rollTotal)+','+str(damageTotal)+'] You hit ' + self.target.name + ' with your attack!')
-                u.send(self.target.conn,'['+str(rollTotal)+','+str(damageTotal)+'] '+self.name + ' lands a blow against you!')
+                u.send(self.conn,'['+str(rollTotal)+','+str(damageTotal)+'] You hit ' + self.target.name + ' with your attack!',self.key)
+                u.send(self.target.conn,'['+str(rollTotal)+','+str(damageTotal)+'] '+self.name + ' lands a blow against you!',self.key)
                 rooms[self.location].broadcast(self.name+' lands a blow against '+self.target.name+'!',self,self.target)
                 self.target.takeDamage(damageTotal,self.damageType,self,rooms)
             else:
-                u.send(self.conn,'[' + str(rollTotal) + '] You miss ' + self.target.name + ' with your attack!')
-                u.send(self.target.conn,'['+str(rollTotal)+']'+self.name + ' misses you with their attack!')
+                u.send(self.conn,'[' + str(rollTotal) + '] You miss ' + self.target.name + ' with your attack!',self.key)
+                u.send(self.target.conn,'['+str(rollTotal)+']'+self.name + ' misses you with their attack!',self.key)
                 rooms[self.location].broadcast(self.name+' misses '+self.target.name+' with an attack!',self,self.target)
             #Players with multiple attacks could easily end up killing their enemy in the middle of a flurry
             if not self.target:
@@ -154,7 +155,7 @@ class Player(BaseActor):
 
     def die(self,rooms):
         rooms[self.location].broadcast(self.name+' falls to the ground, dead.',self)
-        u.send(self.conn,'You are dead!')
+        u.send(self.conn,'You are dead!',key=self.key)
         self.inCombat = False
         #TODO: consider moving the following code to a function somewhere. It'll also be needed by flee and other combat escape code.
         #Iterate through the list of people the player is in combat with
@@ -238,7 +239,7 @@ def receive(sock,RSA=False,BYTES=False,key=None):
             tag = data[x*48+32:x*48+48]
             cipher = AES.new(key,AES.MODE_EAX,nonce)
             finalData += cipher.decrypt_and_verify(ciphertext, tag)
-            finalData = finalData.strip()
+        finalData = finalData.strip()
         if not BYTES:
             return str(finalData,'utf-8')
         else:
@@ -257,19 +258,19 @@ def verification(msg,player):
     if verification[4] == None:
         verification[4] = msg
         print('Received and stored AES key')
-        u.send(connection,"Please select a username:",key=verification[4])
+        u.send(connection,"Please select a username:",verification[4])
     elif verification[0] == 0: #Player is selecting username
         verification[0] = msg
         cursor.execute("SELECT name FROM players WHERE name = %s;", (verification[0],))
         result = cursor.fetchone()
         if result:
             print('Asking player to select password')
-            u.send(connection,"Please enter your password:",key=verification[4])
+            u.send(connection,"Please enter your password:",verification[4])
         elif msg.isalpha() and len(msg) <= 30:
-            u.send(connection,"Please select a password:",key=verification[4])
+            u.send(connection,"Please select a password:",verification[4])
             verification[2] = 0
         else:
-            u.send(connection,"Please select a name with only English letters, maximum 30 characters\n",key=verification[4])
+            u.send(connection,"Please select a name with only English letters, maximum 30 characters\n",verification[4])
             verification[2] = 1
             verification[0] = 0
     elif verification[1] == 0: #Player is either setting or entering password, depending on verification[2]
@@ -280,14 +281,14 @@ def verification(msg,player):
             cursor.execute("SELECT password FROM players WHERE name = %s;", (verification[0],))
             playerPassword = cursor.fetchone()
             if playerPassword[0] == msg:
-                u.send(connection,"Welcome to the server.",key=verification[4])
+                u.send(connection,"Welcome to the server.",verification[4])
                 verification[1] = 1
             else:
-                u.send(connection,"Password incorrect, re-enter username",key=verification[4])
+                u.send(connection,"Password incorrect, re-enter username",verification[4])
                 return[0,0,1,0]
         else:
             verification[1] = msg
-            u.send(connection,"Please re-enter to confirm")
+            u.send(connection,"Please re-enter to confirm",key=verification[4])
     elif verification[2] == 0: #Player is confirming the previously entered password
         m = hashlib.sha256()
         m.update(bytes(msg,'utf-8'))
@@ -412,7 +413,7 @@ while True:
                     data = receive(client,RSA=True,BYTES=True)
                 else:
                     data = receive(client,key=connections[client][4])
-            except KeyError:
+            except TypeError:
                 data = receive(client,key=connections[client].key)
         except RuntimeError:
             print('Disconnected player due to exception when receiving data')
@@ -477,13 +478,15 @@ while True:
                 if isinstance(oldPlayer, Server) or isinstance(connections[oldPlayer],list):
                     continue #Don't want to bother the server, or any unverified players.
                 if connections[oldPlayer].name == connections[client][0]:
+                    #Overwrite the old encryption key with the new one
+                    connections[oldPlayer].key = connections[client][4]
                     #Set the new connection's player as the old player object
                     connections[client] = connections[oldPlayer]
                     #Set the old player object's connection reference to the new connection
                     connections[oldPlayer].conn = client
                     #Delete the old connection from connections list, but warn them first
                     try:
-                        send(oldPlayer,'You are being usurped by someone who knows your username and password. Sorry if it\'s not you')
+                        send(oldPlayer,'You are being usurped by someone who knows your username and password. Sorry if it\'s not you',key=connections[oldPlayer].key)
                     except:
                         pass
                     connections.pop(oldPlayer)
@@ -491,11 +494,12 @@ while True:
                     connectedToExisting = True
                     print('Player is already logged in, connecting to existing body')
                     rooms[connections[client].db[PEnum.LOCATION.value]].broadcast(connections[client].name + '\'s body has been taken over by a new soul.',connections[client])
-                    u.send(connections[client].conn,'You have entered your body, forcing out the soul inhabiting it.')
+                    u.send(connections[client].conn,'You have entered your body, forcing out the soul inhabiting it.',key=connections[client].key)
                     break
             if not foundPlayer: #If the player wasn't in the main list, check if they're in the loose player list
                 for looseP in loosePlayers:
                     if looseP.name == connections[client][0]:
+                        looseP.key = connections[client][4] #Replace the old body's encryption key with the new one
                         connections[client] = looseP #Replace the new connection's verification tuple with the old body
                         looseP.conn = client #Tell the old body about its new connection
                         loosePlayers.remove(looseP) #Remove the body from loose players
@@ -503,11 +507,11 @@ while True:
                         print('Player being connected to loose body')
                         print(connections[client])
                         rooms[connections[client].location].broadcast(connections[client].name + '\'s soul has returned to their body.',connections[client])
-                        u.send(connections[client].conn,'You have re-entered your body, right where you left it.')
+                        u.send(connections[client].conn,'You have re-entered your body, right where you left it.',key = connections[client].key)
                         break
             if connectedToExisting:
                 break
-            connections[client] = Player(connections[client][0],client) #Make a new player with the verified name
+            connections[client] = Player(connections[client][0],client,connections[client][4]) #Make a new player with the verified name
             connections[client].download(cursor)
             print('Verified existing player '+connections[client].name)
             try:
@@ -519,7 +523,7 @@ while True:
         elif connections[client][0] != 0 and connections[client][1] != 0 and connections[client][2] != 0: #A new player looks like ['Auldrin',admin,admin,0]
             cursor.execute("INSERT INTO players (name, password) VALUES (%s, %s)",(connections[client][0].capitalize(),connections[client][1]))
             db.commit()
-            connections[client] = Player(connections[client][0],client)
+            connections[client] = Player(connections[client][0],client,connections[client][4])
             connections[client].download(cursor)
             print('Verified new player ',connections[client].name)
             u.enterRoom(connections[client],rooms[connections[client].location])

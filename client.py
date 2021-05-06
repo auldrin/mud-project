@@ -49,7 +49,7 @@ def send(sock,msg,RSA=False,BYTES=False):
             cipher = AES.new(key,AES.MODE_EAX)
             nonce = cipher.nonce
             ciphertext,tag = cipher.encrypt_and_digest(x)
-            finalMessage = nonce+ciphertext+tag
+            finalMessage += nonce+ciphertext+tag
 
     #assemble fixed length header
     length = bytes(str(len(finalMessage)),'utf-8')
@@ -91,19 +91,15 @@ def receive(sock):
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
     data = b''.join(chunks)
-    print(data)
     blocks = len(data)//48
-
     finalData = b''
     for x in range(blocks):
-        print(x)
         nonce = data[x*48:x*48+16]
         ciphertext = data[x*48+16:x*48+32]
         tag = data[x*48+32:x*48+48]
-        print(nonce)
         cipher = AES.new(key,AES.MODE_EAX,nonce)
         finalData += cipher.decrypt_and_verify(ciphertext, tag)
-        finalData = finalData.strip()
+    finalData = finalData.strip()
     return str(finalData,'utf-8')
 
 def handle_enter(event):
@@ -197,7 +193,6 @@ while True:
 
     #generate and send encrypted AES key
     key = get_random_bytes(16)
-    cipher = AES.new(key,AES.MODE_EAX)
     send(server.sock,key,RSA=True,BYTES=True)
     print('Sent AES key')
 

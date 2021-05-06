@@ -12,7 +12,7 @@ def quit(player,message,room,cursor):
             player.timer = 99999
 
     except IndexError:
-        u.send(player.conn,'To quit, type \'quit confirm\'')
+        u.send(player.conn,'To quit, type \'quit confirm\'',player.key)
         return
 
 
@@ -20,12 +20,16 @@ def say(player,room,message):
     message = message.partition(' ')[2]
     newMessage = ''.join((player.name,' says \'',message,'\''))
     room.broadcast(newMessage,player)
-    u.send(player.conn,'You say \''+message+'\'')
+    u.send(player.conn,'You say \''+message+'\'',player.key)
 
 def dig(room,message,rooms,cursor):
     message = message.split()
-    d = message[1]
-    name = ' '.join(message[2:])
+    try:
+        d = message[1]
+        name = ' '.join(message[2:])
+    except KeyError:#
+        #Not ideal to provide no feedback here, but no other solution presents itself right now
+        return
     desc = 'Default description'
     west, east, south, north, up, down = 0, 0, 0, 0, 0, 0
     if d == 'east':
@@ -40,6 +44,9 @@ def dig(room,message,rooms,cursor):
         up = room.db[u.REnum['ID']]
     elif d == 'up':
         down = room.db[u.REnum['ID']]
+    else:
+        #Not ideal to provide no feedback here, but no other solution presents itself right now
+        return
     #Save the room as the newest entry in the room table
     cursor.execute('INSERT INTO rooms (name, east, west, north, south, up, down, description) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)',
     (name,east,west,north,south,up,down,desc))
@@ -61,11 +68,11 @@ def tele(player,message,rooms):
         target = int(message.split()[1])
         target = rooms[target]
     except KeyError:
-        u.send(player.conn,'Room ' + str(target) + ' does not exist')
+        u.send(player.conn,'Room ' + str(target) + ' does not exist',player.key)
         print(rooms.keys())
         return
     except (IndexError,ValueError):
-        u.send(player.conn,'Please provide a target room. Correct format: \'tele 1\'')
+        u.send(player.conn,'Please provide a target room. Correct format: \'tele 1\'',player.key)
         return
     u.leaveRoom(player,rooms[player.location])
     u.enterRoom(player,target)
@@ -78,16 +85,16 @@ def link(player,message,rooms,cursor):
         d = message[1]
         t = message[2]
     except (AttributeError,TypeError,KeyError):
-        send(player.conn,'Invalid usage, try: \'link west 1\' format instead.')
+        send(player.conn,'Invalid usage, try: \'link west 1\' format instead.',player.key)
         return
 
     key = u.convertStringToRoomEnum(d)
     if not key:
-        u.send(player.conn,'Direction invalid')
+        u.send(player.conn,'Direction invalid',player.key)
     try:
         cursor.execute('UPDATE rooms SET '+d+' = %s WHERE id = %s',(t,player.location,))
     except:
-        u.send(player.conn,'Invalid usage, try: \'link west 1\' format instead.')
+        u.send(player.conn,'Invalid usage, try: \'link west 1\' format instead.',player.key)
         return
     rooms[player.location].update(cursor)
     u.send(player.conn,'Successfully linked rooms')
@@ -96,17 +103,17 @@ def editDesc(player,message,room,cursor):
     message = message.partition(' ')[2]
     cursor.execute('UPDATE rooms set description = %s WHERE id = %s',(message,player.location))
     room.update(cursor)
-    u.send(player.conn,'Successfully edited room description')
+    u.send(player.conn,'Successfully edited room description',player.key)
 
 def editName(player,message,room,cursor):
     message = message.partition(' ')[2]
     cursor.execute('UPDATE rooms set name = %s WHERE id = %s',(message,player.location))
     room.update(cursor)
-    u.send(player.conn,'Successfully edited room name')
+    u.send(player.conn,'Successfully edited room name',player.key)
 
 def move(player,message,rooms,multi=False):
     if player.inCombat:
-        u.send(player.conn,'You can\'t just walk out of combat!')
+        u.send(player.conn,'You can\'t just walk out of combat!',player.key)
         return
     if multi: #message will be, for example, 'eeeswdu'
         for c in message:
@@ -114,7 +121,7 @@ def move(player,message,rooms,multi=False):
             try:
                 destination = rooms[rooms[player.location].db[u.convertStringToRoomEnum(d)]] #convert east to the appropriate enum key for the database
             except KeyError:
-                u.send(player.conn,'There\'s nothing that way')
+                u.send(player.conn,'There\'s nothing that way',player.key)
                 continue
             u.leaveRoom(player,rooms[player.location],d) #Inform the room and its players that the player is departing
             u.enterRoom(player,destination,u.REnumGet(u.reverseDirection(u.convertStringToRoomEnum(d)))) #convert east to the enum key, then flip it and convert it back
@@ -123,7 +130,7 @@ def move(player,message,rooms,multi=False):
         try:
             destination = rooms[rooms[player.location].db[u.convertStringToRoomEnum(message)]] #turn east to an enum key for the database
         except KeyError:
-            u.send(player.conn,'There\'s nothing that way')
+            u.send(player.conn,'There\'s nothing that way',player.key)
             return
         u.leaveRoom(player,rooms[player.location],message)
         u.enterRoom(player,destination,u.REnumGet(u.reverseDirection(u.convertStringToRoomEnum(message)))) #convert east to an enum key, then reverse it
@@ -146,7 +153,7 @@ def look(player,message,rooms):
         key = u.convertStringToRoomEnum(arg)
         room = rooms[room.db[key]]
     except KeyError: #Triggered by rooms when room.db[key] is None, which means there is no room that way. Inform the player.
-        u.send(player.conn,'There is nothing that way.')
+        u.send(player.conn,'There is nothing that way.',player.key)
         return
     except TypeError:
         pass #Type error will be triggered if key = None, which means arg was an unlisted direction. Just do a default look.
@@ -165,14 +172,14 @@ def look(player,message,rooms):
             continue
         message += ''.join(('\n',p.name,' is standing here.'))
     message += '\nValid directions: ' + ','.join(directions)
-    u.send(player.conn,message)
+    u.send(player.conn,message,player.key)
 
 def chat(player,message,connectionList):
     message = message.partition(' ')[2]
     message = '[CHAT] '+player.name+': '+message
     for connection in connectionList:
         try:
-            u.send(connection,message)
+            u.send(connection,message,player.key)
         except AttributeError: #Will always happen when the server tries to send to itself.
             continue
 
@@ -183,7 +190,7 @@ def flee(player,message,rooms):
         if rooms[player.location].db[direction]:
             options.append((rooms[player.location].db[direction],index))
     if not options:
-        u.send(player.conn,'There is nowhere to flee.')
+        u.send(player.conn,'There is nowhere to flee.',player.key)
         return
     #Check success
     if player.inCombat:
@@ -208,13 +215,13 @@ def flee(player,message,rooms):
         u.enterRoom(player,rooms[direction[0]],u.REnumGet(u.reverseDirection(direction[1])))
         look(player,'',rooms)
         if player.target:
-            u.send(player.conn,'You successfully escaped ' + player.target.name)
+            u.send(player.conn,'You successfully escaped ' + player.target.name,player.key)
         elif player.inCombat:
-            u.send(player.conn,'You successfully escaped.')
+            u.send(player.conn,'You successfully escaped.',player.key)
         else:
-            u.send(player.conn,'You successfully \'escaped\'.')
+            u.send(player.conn,'You successfully \'escaped\'.',player.key)
     else:
-        u.send(player.conn,'You fail to get away!')
+        u.send(player.conn,'You fail to get away!',player.key)
 
 def kill(player, message, rooms):
     message = message.split()[1].capitalize()
@@ -230,15 +237,15 @@ def kill(player, message, rooms):
             targetFound = True
             break
     if selfFound and not targetFound:
-        u.send(player.conn,'You can\'t kill yourself.')
+        u.send(player.conn,'You can\'t kill yourself.',player.key)
         return
     elif not targetFound:
-        u.send(player.conn,'There\'s nobody by that name here.')
+        u.send(player.conn,'There\'s nobody by that name here.',player.key)
         return
     #check if room is a valid location for combat, I guess?
     #
     if player.target == target:
-        u.send(player.conn,'You\'re trying as hard as you can!')
+        u.send(player.conn,'You\'re trying as hard as you can!',player.key)
         return
     #If they weren't already, both people are in combat now
     if not player.inCombat:
@@ -257,15 +264,15 @@ def kill(player, message, rooms):
     if not player in target.opponents:
         target.opponents.append(player)
     #Tell the attacker, defender, and any bystanders, what's going on.
-    u.send(player.conn,'You attack ' + target.name + '!')
-    u.send(target.conn,player.name + ' attacks you!')
+    u.send(player.conn,'You attack ' + target.name + '!',player.key)
+    u.send(target.conn,player.name + ' attacks you!',player.key)
     rooms[player.location].broadcast(player.name + ' attacks ' + target.name +'!',player,target)
 
 def me(player,message,rooms):
     try:
         message = message.partition(' ')[2]
     except KeyError:
-        send(player.conn,'Do what?')
+        send(player.conn,'Do what?',player.key)
     rooms[player.location].broadcast(player.name + ' ' + message + '.')
 
 def lookAtPlayer(viewer, target):
@@ -280,7 +287,7 @@ def lookAtPlayer(viewer, target):
         message += ' is a '
     message += target.race + '.\n'
     message += target.name + ' is ' + target.healthCheck() + '.'
-    u.send(viewer.conn,message)
+    u.send(viewer.conn,message,viewer.key)
 
 def characterSheet(player):
     #The name
@@ -301,4 +308,4 @@ def characterSheet(player):
     #Skills
     #Other stuff?
     #send
-    u.send(player.conn,message)
+    u.send(player.conn,message,player.key)
