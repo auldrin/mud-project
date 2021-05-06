@@ -12,7 +12,6 @@ REnum = {'ID':0,
         'DESCRIPTION':8}
 def REnumGet(number):
     #For when you have a number corresponding to a direction (2 through 7) but need a string for the direction
-    #return REnum.keys()[REnum.values().index(number)]
     return list(REnum.keys())[list(REnum.values()).index(number)]
 
 PEnum = {'ID':0,
@@ -125,7 +124,7 @@ def enterRoom(player,room,direction=None,revive=None):
 def leaveRoom(player,room,direction=None,flee=None,dead=None):
     #Tells the room that the player is no longer going to be in it. Always call in a pair with enterRoom, unless logging in/out
     room.playerList.remove(player)
-
+    #Dead players have already announced their death, no further action required.
     if dead:
         return
 

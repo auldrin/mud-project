@@ -31,26 +31,12 @@ try:
 except:
     print('Races table already exists')
 
-try:
-    cursor.execute("SELECT * FROM players")
-    result = cursor.fetchall()
-    for x in result:
-        print(x)
-except:
-    pass
 
-try:
-    cursor.execute("SELECT * FROM rooms")
-    result = cursor.fetchall()
-    for x in result:
-        print(x)
-except:
-    pass
-
-try:
-    cursor.execute("SELECT * FROM races")
-    result = cursor.fetchall()
-    for x in result:
-        print(x)
-except:
-    pass
+cursor.execute("SHOW TABLES")
+tables = cursor.fetchall()
+for table in tables:
+    print(table)
+    cursor.execute("SELECT * from "+table[0])
+    content = cursor.fetchall()
+    for entry in content:
+        print(entry)
