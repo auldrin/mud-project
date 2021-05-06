@@ -1,5 +1,6 @@
 from enum import Enum
 import settings as s
+from Crypto.Cipher import AES
 
 REnum = {'ID':0,
         'NAME':1,
@@ -74,23 +75,38 @@ def lengthenDirection(d):
     elif d == 'd':
         return 'down'
 
-def send(sock,msg):
+def send(sock,msg,key):
     #convert to bytes
     msg = bytes(msg,'utf-8')
 
-    #assemble fixed length header
-    length = bytes(str(len(msg)),'utf-8')
-    pad = s.HEADER_LENGTH-len(length)
+    #Prepare message for encryption
+    length = len(msg)
+    requiredPad = 16-(length%16)
+    msg += b' '*requiredPad
+
+    #Split message into 16 byte chunks
+    msg = [msg[i:i+16] for i in range(0,len(msg),16)]
+
+    #Encrypt chunks, and assemble them into a single message
+    finalMessage = b''
+    for x in msg:
+        cipher = AES.new(key,AES.MODE_EAX)
+        nonce = cipher.nonce
+        ciphertext,tag = cipher.encrypt_and_digest(x)
+        finalMessage += nonce+ciphertext+tag
+
+    #assemble fixed length header stating encrypted length
+    finalLength = bytes(str(len(finalMessage)),'utf-8')
+    pad = s.HEADER_LENGTH-len(finalLength)
     if pad >= 1:
-        length = length + b' '*pad
+        finalLength = finalLength + b' '*pad
 
     #attach header
-    msg = length+msg
-
+    finalMessage = finalLength+finalMessage
     totalsent = 0
-    while totalsent < len(msg):
+    while totalsent < len(finalMessage):
         try:
-            sent = sock.send(msg[totalsent:])
+            sent = sock.send(finalMessage[totalsent:])
         except ConnectionAbortedError:
             print('Cannot send to loose player')
             break

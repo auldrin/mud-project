@@ -1,7 +1,11 @@
 import socket
 import select
 import sys
+
 import rsa
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+
 import tkinter as tk
 from tkinter import font as tkFont
 
@@ -11,6 +15,7 @@ PORT = 1024
 HEADER_LENGTH = 10
 TIMEOUT = 0.5
 PUBLIC_KEY = rsa.PublicKey(25225735533549590446154239934719976934564125485812868128664974319512400129448962900647860261364657347374200184501646862047716180620318795937656111092231004743228245673403201831418447465807627542356795291999638304626843013111414452018310445683427977755671257614629164865516160854280416179725923473446697801971823478617336942118730805390658888069242890374893259399375525097648546984418979507509110342128547444918265845898987465653727381056773086043649181402614557848636666664040623462583388296567481199738407416110407148170802467959298026142070547049090254980267235402311098734078328443321816391254798054871666346200741, 65537)
+
 class Server:
     def __init__(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -24,22 +29,40 @@ class Server:
     def re_init(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-def send(sock,msg):
+def send(sock,msg,RSA=False,BYTES=False):
     #convert to bytes
-    msg = bytes(msg,'utf-8')
-    msg = rsa.encrypt(msg,PUBLIC_KEY)
+    if not BYTES:
+        msg = bytes(msg,'utf-8')
+    if RSA:
+        finalMessage = rsa.encrypt(msg,PUBLIC_KEY)
+    else:
+        #Prepare message for encryption
+        length = len(msg)
+        requiredPad = 16-(length%16)
+        msg += b' '*requiredPad
+
+        #split message into 16 byte chunks
+        msg = [msg[i:i+16] for i in range(0,len(msg),16)]
+        #Encrypt chunks, and assemble them into a single message
+        finalMessage = b''
+        for x in msg:
+            cipher = AES.new(key,AES.MODE_EAX)
+            nonce = cipher.nonce
+            ciphertext,tag = cipher.encrypt_and_digest(x)
+            finalMessage = nonce+ciphertext+tag
+
     #assemble fixed length header
-    length = bytes(str(len(msg)),'utf-8')
+    length = bytes(str(len(finalMessage)),'utf-8')
     pad = HEADER_LENGTH-len(length)
     if pad >= 1:
         length += b' '*pad
+
     #attach header
-    msg = length+msg
-    print(length)
+    finalMessage = length + finalMessage
 
     totalsent = 0
-    while totalsent < len(msg):
-        sent = sock.send(msg[totalsent:])
+    while totalsent < len(finalMessage):
+        sent = sock.send(finalMessage[totalsent:])
         if sent == 0:
             raise RuntimeError('socket connection broken')
         totalsent = totalsent + sent
@@ -67,7 +90,21 @@ def receive(sock):
             raise ConnectionResetError('Socket closed during reading')
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
-    return str(b''.join(chunks),'utf-8')
+    data = b''.join(chunks)
+    print(data)
+    blocks = len(data)//48
+
+    finalData = b''
+    for x in range(blocks):
+        print(x)
+        nonce = data[x*48:x*48+16]
+        ciphertext = data[x*48+16:x*48+32]
+        tag = data[x*48+32:x*48+48]
+        print(nonce)
+        cipher = AES.new(key,AES.MODE_EAX,nonce)
+        finalData += cipher.decrypt_and_verify(ciphertext, tag)
+        finalData = finalData.strip()
+    return str(finalData,'utf-8')
 
 def handle_enter(event):
     global textCursor
@@ -158,6 +195,12 @@ while True:
             window.update()
             continue
 
+    #generate and send encrypted AES key
+    key = get_random_bytes(16)
+    cipher = AES.new(key,AES.MODE_EAX)
+    send(server.sock,key,RSA=True,BYTES=True)
+    print('Sent AES key')
+
     print('Entering main loop')
     while True:
         incoming,outgoing,error = select.select([server.sock],[server.sock],[server.sock])
@@ -178,6 +221,3 @@ while True:
             print('Panic')
         window.update_idletasks()
         window.update()
-
-
-

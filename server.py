@@ -4,8 +4,10 @@ import socket
 import select
 import mysql.connector
 import room
+
 import rsa
 import hashlib
+from Crypto.Cipher import AES
 
 import privatekey
 import utility as u
@@ -37,7 +39,6 @@ class Weapon(Item):
 
 def getInit(actor):
     return actor.initiativeTotal
-
 
 class BaseActor:
     def __init__(self,name):
@@ -200,7 +201,7 @@ class Server:
         else:
             return False
 
-def receive(sock):
+def receive(sock,RSA=False,BYTES=False,key=None):
     chunks = []
     bytes_recd = 0
     #receive header
@@ -224,25 +225,51 @@ def receive(sock):
             raise RuntimeError('Socket closed during reading')
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
-    msg = b''.join(chunks)
-    msg = rsa.decrypt(msg,PRIVATE_KEY)
-    return str(msg,'utf-8')
+    data = b''.join(chunks)
+
+    if RSA:
+        data = rsa.decrypt(data,PRIVATE_KEY)
+    else:
+        blocks = len(data)//48
+        finalData = b''
+        for x in range(blocks):
+            nonce = data[x*48:x*48+16]
+            ciphertext = data[x*48+16:x*48+32]
+            tag = data[x*48+32:x*48+48]
+            cipher = AES.new(key,AES.MODE_EAX,nonce)
+            finalData += cipher.decrypt_and_verify(ciphertext, tag)
+            finalData = finalData.strip()
+        if not BYTES:
+            return str(finalData,'utf-8')
+        else:
+            return finalData
+
+    if not BYTES:
+        return str(data,'utf-8')
+    else:
+        return data
 
 def verification(msg,player):
     verification = player[1]
     connection = player[0]
     #If player[1] is a list, this will work and progress through authentication. If it is not, it will except
-    if verification[0] == 0: #Player is selecting username
+    #Ver[4] will be the AES key
+    if verification[4] == None:
+        verification[4] = msg
+        print('Received and stored AES key')
+        u.send(connection,"Please select a username:",key=verification[4])
+    elif verification[0] == 0: #Player is selecting username
         verification[0] = msg
         cursor.execute("SELECT name FROM players WHERE name = %s;", (verification[0],))
         result = cursor.fetchone()
         if result:
-            u.send(connection,"Please enter your password:")
+            print('Asking player to select password')
+            u.send(connection,"Please enter your password:",key=verification[4])
         elif msg.isalpha() and len(msg) <= 30:
-            u.send(connection,"Please select a password:")
+            u.send(connection,"Please select a password:",key=verification[4])
             verification[2] = 0
         else:
-            u.send(connection,"Please select a name with only English letters, maximum 30 characters\n")
+            u.send(connection,"Please select a name with only English letters, maximum 30 characters\n",key=verification[4])
             verification[2] = 1
             verification[0] = 0
     elif verification[1] == 0: #Player is either setting or entering password, depending on verification[2]
@@ -253,10 +280,10 @@ def verification(msg,player):
             cursor.execute("SELECT password FROM players WHERE name = %s;", (verification[0],))
             playerPassword = cursor.fetchone()
             if playerPassword[0] == msg:
-                u.send(connection,"Welcome to the server.")
+                u.send(connection,"Welcome to the server.",key=verification[4])
                 verification[1] = 1
             else:
-                u.send(connection,"Password incorrect, re-enter username")
+                u.send(connection,"Password incorrect, re-enter username",key=verification[4])
                 return[0,0,1,0]
         else:
             verification[1] = msg
@@ -265,12 +292,11 @@ def verification(msg,player):
         m = hashlib.sha256()
         m.update(bytes(msg,'utf-8'))
         msg = m.hexdigest()
-        print(msg)
         if msg == verification[1]:
-            u.send(connection,"Welcome to the server.")
+            u.send(connection,"Welcome to the server.",key=verification[4])
             verification[2] = 1
         else:
-            u.send(connection,"Password mismatch, clearing both. Try again.")
+            u.send(connection,"Password mismatch, clearing both. Try again.",key=verification[4])
             verification[1] = 0
     return verification
 
@@ -317,7 +343,6 @@ while True:
         for room in rooms.values():
             #sort playerlist by initiative
             room.playerList.sort(key=getInit)
-            print(room.playerList)
             for player in room.playerList:
                 if player.inCombat:
                     print(player.name,player.initiativeTotal)
@@ -376,14 +401,20 @@ while True:
         if isinstance(client,Server):
             if client.accept():
                 #Authentication list [username, password, password confirmation (if new account),timeoutTimer]
-                connections[client.conn] = [0,0,1,0]
-                u.send(client.conn,"Enter username:")
+                connections[client.conn] = [0,0,1,0,None]
+                #u.send(client.conn,"Enter username:")
             continue
         ###################################################################
         #If the client is an actual player, receive the data
         try:
-            data = receive(client)
-        except:
+            try:
+                if not connections[client][4]: #If the player is a verification tuple, 4 will be none or an AES key.
+                    data = receive(client,RSA=True,BYTES=True)
+                else:
+                    data = receive(client,key=connections[client][4])
+            except KeyError:
+                data = receive(client,key=connections[client].key)
+        except RuntimeError:
             print('Disconnected player due to exception when receiving data')
             if isinstance(connections[client],Player):
                 loosePlayers.append(connections[client])
