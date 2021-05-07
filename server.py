@@ -49,14 +49,13 @@ class BaseActor:
         self.location = None
         self.target = None
         self.opponents = []
-        #TODO: Consider whether to phase out inCombat. It is faster than checking opponents size.
         self.inCombat = False
         self.baseAttackBonus = 0
         self.armourClass = 10
         self.initiativeBonus = 0
         self.initiativeTotal = 0
 
-        self.damage = {6:2}
+        self.damage = {6:2} #Key is type of dice, value is quantity
         self.damageType = 'subdual'
         self.attributes = {'strength':10,'dexterity':10,'constitution':10,'wisdom':10,'intelligence':10,'charisma':10}
         self.attributesTotal = {}
@@ -84,6 +83,20 @@ class BaseActor:
             return 'critically wounded'
         else:
             return 'on the brink of death'
+
+    def disengage(self):
+        #Command which cleans out the actor's list of opponents, and also erases itself from everyone else's list of opponents
+        self.inCombat = False
+        self.target = None
+        while self.opponents:
+            self.opponents[0].opponents.remove(self)
+            if self.opponents[0].target == self:
+                if self.opponents[0].opponents:
+                    self.opponents[0].target = self.opponents[0].opponents[0]
+                else:
+                    self.opponents[0].inCombat = False
+                    self.opponents[0].target = None
+            self.opponents.pop(0)
 
 class Mob(BaseActor):
     def __init__(self,name,ID,cursor):
@@ -136,18 +149,18 @@ class Player(BaseActor):
             #TODO: Pre-calculate all attribute modifiers somewhere, then make sure they stay updated
             rollTotal = roll + self.baseAttackBonus + self.attributesTotal['strength']//2 - 5
             damageTotal = 0
-            if rollTotal > self.target.armourClass + self.target.attributesTotall['dexterity']//2 - 5:
+            if rollTotal > self.target.armourClass + self.target.attributesTotal['dexterity']//2 - 5:
                 for key in self.damage.keys():
                     for die in range(self.damage[key]):
                         damageTotal += random.randint(1,key)
                 damageTotal += self.attributesTotal['strength']//2 - 5
                 u.send(self.conn,'['+str(rollTotal)+','+str(damageTotal)+'] You hit ' + self.target.name + ' with your attack!',self.key)
-                u.send(self.target.conn,'['+str(rollTotal)+','+str(damageTotal)+'] '+self.name + ' lands a blow against you!',self.key)
+                u.send(self.target.conn,'['+str(rollTotal)+','+str(damageTotal)+'] '+self.name + ' lands a blow against you!',self.target.key)
                 rooms[self.location].broadcast(self.name+' lands a blow against '+self.target.name+'!',self,self.target)
                 self.target.takeDamage(damageTotal,self.damageType,self,rooms)
             else:
                 u.send(self.conn,'[' + str(rollTotal) + '] You miss ' + self.target.name + ' with your attack!',self.key)
-                u.send(self.target.conn,'['+str(rollTotal)+']'+self.name + ' misses you with their attack!',self.key)
+                u.send(self.target.conn,'['+str(rollTotal)+']'+self.name + ' misses you with their attack!',self.target.key)
                 rooms[self.location].broadcast(self.name+' misses '+self.target.name+' with an attack!',self,self.target)
             #Players with multiple attacks could easily end up killing their enemy in the middle of a flurry
             if not self.target:
@@ -159,20 +172,20 @@ class Player(BaseActor):
         self.inCombat = False
         #TODO: consider moving the following code to a function somewhere. It'll also be needed by flee and other combat escape code.
         #Iterate through the list of people the player is in combat with
-        while self.opponents:
-            #Remove the player from the opponents' opponent list
-            self.opponents[0].opponents.remove(self)
-            if self.opponents[0].target == self:
-                #If the enemy has other potential targets, it switches and keeps fighting
-                if self.opponents[0].opponents:
-                    self.opponents[0].target = self.opponents[0].opponents[0]
-                #Otherwise, it is no longer in combat and has no target
-                else:
-                    self.opponents[0].inCombat = False
-                    self.opponents[0].target = None
-            #Remove the opponent from the player's opponent list
-            self.opponents.pop(0)
-        self.target = None
+        #while self.opponents:
+        #    #Remove the player from the opponents' opponent list
+        #    self.opponents[0].opponents.remove(self)
+        #    if self.opponents[0].target == self:
+        #        #If the enemy has other potential targets, it switches and keeps fighting
+        #        if self.opponents[0].opponents:
+        #            self.opponents[0].target = self.opponents[0].opponents[0]
+        #        #Otherwise, it is no longer in combat and has no target
+        #        else:
+        #            self.opponents[0].inCombat = False
+        #            self.opponents[0].target = None
+        #    #Remove the opponent from the player's opponent list
+        #    self.opponents.pop(0)
+        #self.target = None
         u.leaveRoom(self,rooms[self.location],dead=True)
         u.enterRoom(self,rooms[1],None,True)
         self.health = self.maxHealth
@@ -424,7 +437,6 @@ while True:
             continue
         ###################################################################
         #If the player is fully logged in, parse and handle their command
-        #TODO: Avoid checking the command twice somehow, while still supporting 'e' for 'east' and such.
         if isinstance(connections[client],Player):
             connections[client].timer = 0.0
             command = parseCommand(data)
@@ -468,7 +480,7 @@ while True:
                 pass
             continue
         ###################################################################
-        #If the player is unverified, attempt to verify using their input
+        #If the player is unverified, attempt to verify them using their input
         connections[client][3] = 0.0
         connections[client] = verification(data,(client,connections[client]))
         if connections[client][1] == 1 and connections[client][2] == 1: #A verified existing player will have a list like ['Auldrin',1,1,0]

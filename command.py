@@ -225,17 +225,17 @@ def flee(player,message,rooms):
     #Leave the room, end combat and unlock targets
     if success:
         direction = random.choice(options)
-        for enemy in player.opponents:
-            enemy.opponents.remove(player)
-            if enemy.target == player:
-                enemy.target = None
-            if not enemy.opponents:
-                enemy.inCombat = False
-            else:
-                enemy.target = enemy.opponents[0]
-        player.opponents = []
-        player.target = None
-        player.inCombat = False
+        #for enemy in player.opponents:
+        #    enemy.opponents.remove(player)
+        #    if enemy.target == player:
+        #        enemy.target = None
+        #    if not enemy.opponents:
+        #        enemy.inCombat = False
+        #    else:
+        #        enemy.target = enemy.opponents[0]
+        #player.opponents = []
+        #player.target = None
+        #player.inCombat = False
         u.leaveRoom(player,rooms[player.location],u.REnumGet(direction[1]),True)
         u.enterRoom(player,rooms[direction[0]],u.REnumGet(u.reverseDirection(direction[1])))
         look(player,'',rooms)
@@ -270,7 +270,7 @@ def kill(player, message, rooms):
     #check if room is a valid location for combat, I guess?
     #
     if player.target == target:
-        u.send(player.conn,'You\'re trying as hard as you can!',player.key)
+        u.send(player.conn,'You\'re trying as hard as you can!',target.key)
         return
     #If they weren't already, both people are in combat now
     if not player.inCombat:
@@ -290,7 +290,7 @@ def kill(player, message, rooms):
         target.opponents.append(player)
     #Tell the attacker, defender, and any bystanders, what's going on.
     u.send(player.conn,'You attack ' + target.name + '!',player.key)
-    u.send(target.conn,player.name + ' attacks you!',player.key)
+    u.send(target.conn,player.name + ' attacks you!',target.key)
     rooms[player.location].broadcast(player.name + ' attacks ' + target.name +'!',player,target)
 
 def me(player,message,rooms):

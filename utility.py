@@ -140,6 +140,8 @@ def enterRoom(player,room,direction=None,revive=None):
 def leaveRoom(player,room,direction=None,flee=None,dead=None):
     #Tells the room that the player is no longer going to be in it. Always call in a pair with enterRoom, unless logging in/out
     room.playerList.remove(player)
+    #Tell the player and their opponents that the fight is over
+    player.disengage()
     #Dead players have already announced their death, no further action required.
     if dead:
         return
