@@ -1,0 +1,7 @@
+privatekey.py
+build/
+dist/
+__pycache__/
+test.py
+muddatabase.py
+*.spec
