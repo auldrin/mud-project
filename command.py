@@ -183,6 +183,31 @@ def chat(player,message,connectionList):
         except AttributeError: #Will always happen when the server tries to send to itself.
             continue
 
+def tell(player,message,playerList):
+    message = message.split()
+    try:
+        target = message[1].capitalize()
+    except IndexError:
+        u.send(player.conn,'Tell who what?',player.key)
+        return
+    try:
+        content = message[2]
+    except IndexError:
+        u.send(player.conn,'Tell them what?',player.key)
+        return
+    for p in playerList:
+        try:
+            if p.name.startswith(target):
+                sentContent = '[TELL] ' + player.name + ': ' + content
+                returnedContent = 'You tell ' + player.name + ': ' + content
+                u.send(p.conn,sentContent,p.key)
+                u.send(player.conn,returnedContent,player.key)
+                return
+        except AttributeError: #Will always happen when the server tries to send to itself.
+            continue
+    u.send(player.conn,'Player not found',player.key)
+    return
+
 def flee(player,message,rooms):
     #Calculate direction to go in
     options = []

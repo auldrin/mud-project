@@ -317,7 +317,7 @@ connections = {Server():None}
 loosePlayers = []
 idlePlayers = []
 rooms = {}
-commandList = ('look','kill','chat','say','flee','me','dig','tele','link','editdesc','editname','quit','character','sheet')
+commandList = ('look','kill','chat','tell','say','flee','me','dig','tele','link','editdesc','editname','quit','character','sheet')
 
 ##### Loads the rooms from the database into a dictionary
 cursor.execute('SELECT * FROM rooms')
@@ -435,7 +435,9 @@ while True:
             elif command == 'kill':
                 c.kill(connections[client],data,rooms)
             elif command == 'chat':
-                c.chat(connections[client],data,connections)
+                c.chat(connections[client],data,connections.keys())
+            elif command == 'tell':
+                c.tell(connections[client],data,connections.values())
             elif command == 'look':
                 c.look(connections[client],data,rooms)
             elif command == 'character' or command == 'sheet':
