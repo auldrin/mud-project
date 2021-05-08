@@ -225,17 +225,6 @@ def flee(player,message,rooms):
     #Leave the room, end combat and unlock targets
     if success:
         direction = random.choice(options)
-        #for enemy in player.opponents:
-        #    enemy.opponents.remove(player)
-        #    if enemy.target == player:
-        #        enemy.target = None
-        #    if not enemy.opponents:
-        #        enemy.inCombat = False
-        #    else:
-        #        enemy.target = enemy.opponents[0]
-        #player.opponents = []
-        #player.target = None
-        #player.inCombat = False
         u.leaveRoom(player,rooms[player.location],u.REnumGet(direction[1]),True)
         u.enterRoom(player,rooms[direction[0]],u.REnumGet(u.reverseDirection(direction[1])))
         look(player,'',rooms)

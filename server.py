@@ -137,19 +137,21 @@ class Player(BaseActor):
         self.attributesTotal['wisdom'] = self.attributes['wisdom'] + race[u.RACEnum['WISDOM']]
         self.attributesTotal['intelligence'] = self.attributes['intelligence'] + race[u.RACEnum['INTELLIGENCE']]
         self.attributesTotal['charisma'] = self.attributes['charisma'] + race[u.RACEnum['CHARISMA']]
+        self.size = race[u.RACEnum['SIZE']]
 
     def attack(self,rooms):
         try:
             attackCount = max(1,self.baseAttackBonus//5)
         except ZeroDivisionError:
             attackCount = 1
-
+        #TODO: Figure out what to do about people who are dual wielding
+        currentBaseAttackBonus = self.baseAttackBonus
         for a in range(attackCount):
             roll = random.randint(1,20)
             #TODO: Pre-calculate all attribute modifiers somewhere, then make sure they stay updated
-            rollTotal = roll + self.baseAttackBonus + self.attributesTotal['strength']//2 - 5
+            rollTotal = roll + currentBaseAttackBonus + (self.attributesTotal['strength']//2 - 5) + self.size
             damageTotal = 0
-            if rollTotal > self.target.armourClass + self.target.attributesTotal['dexterity']//2 - 5:
+            if rollTotal > self.target.armourClass + (self.target.attributesTotal['dexterity']//2 - 5) + self.target.size:
                 for key in self.damage.keys():
                     for die in range(self.damage[key]):
                         damageTotal += random.randint(1,key)
@@ -162,6 +164,8 @@ class Player(BaseActor):
                 u.send(self.conn,'[' + str(rollTotal) + '] You miss ' + self.target.name + ' with your attack!',self.key)
                 u.send(self.target.conn,'['+str(rollTotal)+']'+self.name + ' misses you with their attack!',self.target.key)
                 rooms[self.location].broadcast(self.name+' misses '+self.target.name+' with an attack!',self,self.target)
+            #Each attack has 5 less BAB than the previous, e.g fighter level 6 can attack twice with BAB +6/+1
+            currentBaseAttackBonus -=5
             #Players with multiple attacks could easily end up killing their enemy in the middle of a flurry
             if not self.target:
                 break

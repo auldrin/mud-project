@@ -33,7 +33,9 @@ RACEnum = {'NAME':0,
             'CONSTITUTION':3,
             'WISDOM':4,
             'INTELLIGENCE':5,
-            'CHARISMA':6}
+            'CHARISMA':6,
+            'FEATBONUS':7,
+            'SIZE':8}
 
 def reverseDirection(key):
     #For when you have a number corresponding to a direction, and want a number for the opposite direction
@@ -74,6 +76,8 @@ def lengthenDirection(d):
         return 'up'
     elif d == 'd':
         return 'down'
+    else:
+        return None
 
 def send(sock,msg,key):
     #convert to bytes
@@ -122,7 +126,7 @@ def enterRoom(player,room,direction=None,revive=None):
     room.playerList.append(player)
     if revive:
         room.broadcast(player.name + ' returns from the dead in an explosion of divine radiance.',player)
-        send(player.conn,'Divine intervention returns you to life.')
+        send(player.conn,'Divine intervention returns you to life.',player.key)
         return
 
     message = player.name + ' has arrived from '
@@ -136,6 +140,7 @@ def enterRoom(player,room,direction=None,revive=None):
     else:
         message += 'nowhere.'
     room.broadcast(message,player)
+    return
 
 def leaveRoom(player,room,direction=None,flee=None,dead=None):
     #Tells the room that the player is no longer going to be in it. Always call in a pair with enterRoom, unless logging in/out
@@ -163,3 +168,4 @@ def leaveRoom(player,room,direction=None,flee=None,dead=None):
     else:
         message += ' has vanished.'
     room.broadcast(message)
+    return

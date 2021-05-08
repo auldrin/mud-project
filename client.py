@@ -36,14 +36,12 @@ def send(sock,msg,RSA=False,BYTES=False):
     if RSA:
         finalMessage = rsa.encrypt(msg,PUBLIC_KEY)
     else:
-        #Prepare message for encryption
-        length = len(msg)
-        requiredPad = 16-(length%16)
+        #Prepare message for encryption, AES works in 16 byte chunks
+        requiredPad = 16-(len(msg)%16)
         msg += b' '*requiredPad
-
         #split message into 16 byte chunks
         msg = [msg[i:i+16] for i in range(0,len(msg),16)]
-        #Encrypt chunks, and assemble them into a single message
+        #Encrypt each chunk, and assemble them into a single message
         finalMessage = b''
         for x in msg:
             cipher = AES.new(key,AES.MODE_EAX)
@@ -59,7 +57,7 @@ def send(sock,msg,RSA=False,BYTES=False):
 
     #attach header
     finalMessage = length + finalMessage
-
+    #Send the message
     totalsent = 0
     while totalsent < len(finalMessage):
         sent = sock.send(finalMessage[totalsent:])
