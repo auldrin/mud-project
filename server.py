@@ -1,9 +1,9 @@
 import time
 import random
+import math
 import socket
 import select
 import mysql.connector
-import room
 
 import rsa
 import hashlib
@@ -13,6 +13,7 @@ import privatekey
 import utility as u
 import command as c
 import settings
+import room
 
 HOST = socket.gethostbyname(socket.gethostname())
 PORT = settings.PORT
@@ -43,9 +44,12 @@ def getInit(actor):
 class BaseActor:
     def __init__(self,name):
         self.name = name
+        self.xp = 0
         self.health = 10
         self.maxHealth = 10
         self.nonLethalDamage = 0
+        self.levels = []
+        self.classes = []
         self.location = None
         self.target = None
         self.opponents = []
@@ -54,12 +58,16 @@ class BaseActor:
         self.armourClass = 10
         self.initiativeBonus = 0
         self.initiativeTotal = 0
-
+        #TODO: Command to toggle dualWielding
+        self.dualWielding = True
+        #TODO: Set up racial base damage, store it for use when weapons aren't equipped
         self.damage = {6:2} #Key is type of dice, value is quantity
         self.damageType = 'subdual'
         self.attributes = {'strength':10,'dexterity':10,'constitution':10,'wisdom':10,'intelligence':10,'charisma':10}
         self.attributesTotal = {}
         self.raceName = 'non-specific'
+        #TODO: Add levelAdjustment to race database
+        self.levelAdjustment
 
     def takeDamage(self,damage,dType,attacker,rooms):
         if dType == 'subdual':
@@ -98,12 +106,52 @@ class BaseActor:
                     self.opponents[0].target = None
             self.opponents.pop(0)
 
+    def calculateBAB(self):
+        #Calculate BAB
+        cursor.execute("SELECT * FROM classes")
+        classes = cursor.fetchall()
+        fullLevels = 0
+        goodLevels = 0
+        poorLevels = 0
+        for c in classes:
+            num = self.levels.count(c[u.CEnum['NAME']])
+            if not num:
+                continue
+            BABTier = c[u.CEnum['BABTIER']]
+            if BABTier == 'full':
+                fullLevels += num
+            elif BABTier == 'good':
+                goodLevels += num
+            elif BABTier == 'poor':
+                poorLevels += num
+        self.baseAttackBonus += fullLevels
+        self.baseAttackBonus += math.floor(goodLevels*0.75)
+        self.baseAttackBonus += math.floor(poorLevels*0.5)
+
+
 class Mob(BaseActor):
     def __init__(self,name,ID,cursor):
         super().__init__(name)
-        cursor.execute('SELECT * FROM mobs WHERE ID = %s',(ID))
-        self.db = cursor.fetchone()
-        self.race = 'non-specific'
+        #cursor.execute('SELECT * FROM mobs WHERE ID = %s',(ID))
+        #self.db = cursor.fetchone()
+        #self.race = 'non-specific'
+
+    def die(self,rooms):
+        rooms[self.location].broadcast(self.name+' falls to the ground, dead.',self)
+        #TODO: Make this take into account that some levels are worth more than others - e.g fighter > warrior
+        split = len(opponents)
+        encounterRating = len(self.levels)+self.levelAdjustment
+        for e in opponents:
+            effectiveEnemyLevel = len(e.levels)+e.levelAdjustment
+            xp += (300 * effectiveEnemyLevel * 2 ^ ((encounterRating - effectiveEnemyLevel) * 0.5))/split
+            e.xp += xp
+            try:
+                u.send(e.conn,'You are awarded ' + str(xp) + '.',e.key)
+            except AttributeError:
+                #If this opponent was a mob, it doesn't have a connection or a key
+                pass
+        u.leaveRoom(self,rooms[self.location],dead=True)
+
 
 
 class Player(BaseActor):
@@ -115,7 +163,7 @@ class Player(BaseActor):
         self.key = cryptoKey
 
     def upload(self,cursor):
-        cursor.execute('UPDATE players SET location = %s WHERE name = %s',(self.location,self.name))
+        cursor.execute('UPDATE players SET location = %s, race = %s, xp = %s WHERE name = %s',(self.location,self.race,self.xp,self.name))
 
     def download(self,cursor):
         cursor.execute("SELECT * FROM players WHERE name = %s",(self.name,))
@@ -123,6 +171,11 @@ class Player(BaseActor):
         self.name = self.db[u.PEnum['NAME']]
         self.location = self.db[u.PEnum['LOCATION']]
         self.race = self.db[u.PEnum['RACE']]
+        #TODO: Store player's feat list in the database, recover it here
+        self.feats = []
+        #TODO: Store player's level list in the database, recover it here
+        self.levels = []
+        self.xp = self.db[u.PEnum['XP']]
         self.attributes['strength'] = self.db[u.PEnum['STRENGTH']]
         self.attributes['dexterity'] = self.db[u.PEnum['DEXTERITY']]
         self.attributes['constitution'] = self.db[u.PEnum['CONSTITUTION']]
@@ -138,15 +191,33 @@ class Player(BaseActor):
         self.attributesTotal['intelligence'] = self.attributes['intelligence'] + race[u.RACEnum['INTELLIGENCE']]
         self.attributesTotal['charisma'] = self.attributes['charisma'] + race[u.RACEnum['CHARISMA']]
         self.size = race[u.RACEnum['SIZE']]
+        self.legs = race[u.RACEnum['LEGS']]
+        self.calculateBAB()
+
 
     def attack(self,rooms):
         try:
-            attackCount = max(1,self.baseAttackBonus//5)
+            #e.g BAB 1: 1//5 = 0 + 1 = 1
+            #e.g BAB 6: 6//5 = 1 + 1 = 2
+            attackCount = self.baseAttackBonus//5 + 1
         except ZeroDivisionError:
+            #e.g BAB 0: 0//5 = ZD error
             attackCount = 1
-        #TODO: Figure out what to do about people who are dual wielding
         currentBaseAttackBonus = self.baseAttackBonus
+        #dualWielding will be bool the player can choose to toggle - it decides whether to attack with your offhand item.
+        #Player may turn off dW for e.g holding a torch, holding a shield
+        #if self.offhand and self.dualWielding:
+        #   currentBaseAttackBonus -= 6
+        #   attackCount += 1
+        #   if self.offhand.light:
+        #       currentBaseAttackBonus += 2
+        #   if 'Two-Weapon Fighting' in self.feats:
+        #       currentBaseAttackBonus += 2
         for a in range(attackCount):
+            #if a == attackCount-1 and self.offhand and self.dualWielding and not 'Two-Weapon Fighting' in self.feats:
+                #If it's the final attack in a dual wielding flurry and the player doesn't have TWF feats, modify the cBAB further
+                #currentBaseAttackBonus -=4
+                #also use off-hand weapon for this attack instead of regular
             roll = random.randint(1,20)
             #TODO: Pre-calculate all attribute modifiers somewhere, then make sure they stay updated
             rollTotal = roll + currentBaseAttackBonus + (self.attributesTotal['strength']//2 - 5) + self.size
@@ -173,27 +244,11 @@ class Player(BaseActor):
     def die(self,rooms):
         rooms[self.location].broadcast(self.name+' falls to the ground, dead.',self)
         u.send(self.conn,'You are dead!',key=self.key)
-        self.inCombat = False
-        #TODO: consider moving the following code to a function somewhere. It'll also be needed by flee and other combat escape code.
-        #Iterate through the list of people the player is in combat with
-        #while self.opponents:
-        #    #Remove the player from the opponents' opponent list
-        #    self.opponents[0].opponents.remove(self)
-        #    if self.opponents[0].target == self:
-        #        #If the enemy has other potential targets, it switches and keeps fighting
-        #        if self.opponents[0].opponents:
-        #            self.opponents[0].target = self.opponents[0].opponents[0]
-        #        #Otherwise, it is no longer in combat and has no target
-        #        else:
-        #            self.opponents[0].inCombat = False
-        #            self.opponents[0].target = None
-        #    #Remove the opponent from the player's opponent list
-        #    self.opponents.pop(0)
-        #self.target = None
         u.leaveRoom(self,rooms[self.location],dead=True)
         u.enterRoom(self,rooms[1],None,True)
         self.health = self.maxHealth
         self.nonLethalDamage = 0
+
 
 class Server:
     def __init__(self):
@@ -334,7 +389,7 @@ connections = {Server():None}
 loosePlayers = []
 idlePlayers = []
 rooms = {}
-commandList = ('look','kill','chat','tell','say','flee','me','dig','tele','link','editdesc','editname','quit','character','sheet')
+commandList = ('look','kill','chat','tell','say','flee','me','dig','tele','link','editdesc','editname','quit','character','sheet','level')
 
 ##### Loads the rooms from the database into a dictionary
 cursor.execute('SELECT * FROM rooms')
@@ -349,7 +404,7 @@ reportTime = 0
 previousCombatRound = previousFrame
 
 while True:
-    #Maybe this is dumb, but timeNow avoids having to call time.time three additional times times? Requires testing.
+    #TODO: Test whether this is quicker than deleting timeNow and just using time.time() three times
     timeNow = time.time()
     timeSinceFrame = timeNow - previousFrame
     previousFrame = timeNow
@@ -369,10 +424,12 @@ while True:
     for conn in connections: #Collect any idle connected players, put them in idlePlayers, don't remove from connections yet because iterator
         if isinstance(conn,Server):
             continue
-        try: #Unverified players use entry 3 as their timeout
+        try:
+            #Unverified players use entry 3 as their timeout
             timer = connections[conn][3] + timeSinceFrame
             connections[conn][3] = timer
-        except TypeError: #Verified players use .timer on the player object
+        except TypeError:
+            #Verified players use player.timer
             timer = connections[conn].timer + timeSinceFrame
             connections[conn].timer = timer
         if timer > IDLE_TIMER:
@@ -387,15 +444,10 @@ while True:
             u.leaveRoom(idleP,rooms[idleP.location])
         except AttributeError:
             print('Unverified player disconnected')
-        finally:
-            try:
-                u.send(idlePlayers[0],'You are being disconnected for inactivity, sorry!')
-            except OSError:
-                pass
-            idlePlayers[0].close()
-            connections.pop(idlePlayers[0])
-            idlePlayers.pop(0)
-            del idleP
+        idlePlayers[0].close()
+        connections.pop(idlePlayers[0])
+        idlePlayers.pop(0)
+        del idleP
 
     i = 0
     while i < len(loosePlayers): #Check each loose player, put them in idlePlayers if they are idle, remove from loosePlayers
@@ -405,6 +457,7 @@ while True:
             loosePlayers.pop(i)
         else:
             i = i + 1
+    del i
 
     while idlePlayers: #Purge the players who are both loose and idle
         idlePlayers[0].upload(cursor)
@@ -418,9 +471,8 @@ while True:
         #If the 'client' is really the server socket, accept the connection and add an entry to connections
         if isinstance(client,Server):
             if client.accept():
-                #Authentication list [username, password, password confirmation (if new account),timeoutTimer]
+                #Authentication list [username, password, password confirmation (if new account),timeout timer,AES key]
                 connections[client.conn] = [0,0,1,0,None]
-                #u.send(client.conn,"Enter username:")
             continue
         ###################################################################
         #If the client is an actual player, receive the data
@@ -481,7 +533,8 @@ while True:
             elif command == 'quit':
                 c.quit(connections[client],data,rooms[connections[client].location],cursor)
                 db.commit()
-                pass
+            elif command == 'level':
+                c.level(connections[client],data,cursor)
             continue
         ###################################################################
         #If the player is unverified, attempt to verify them using their input

@@ -23,13 +23,25 @@ except:
     print('Room table already exists')
 
 try:
-    cursor.execute("CREATE TABLE races (name VARCHAR(255), strength INT, dexterity INT, constitution INT, wisdom INT, intelligence INT, charisma INT)")
+    cursor.execute("CREATE TABLE races (name VARCHAR(255), \
+                    strength INT DEFAULT 0, dexterity INT DEFAULT 0, \
+                    constitution INT DEFAULT 0, wisdom INT DEFAULT 0, \
+                    intelligence INT DEFAULT 0, charisma INT DEFAULT 0,\
+                    featBonus INT DEFAULT 0, \
+                    size INT DEFAULT 0, legs INT DEFAULT 2)")
     db.commit()
-    cursor.execute("INSERT INTO races (name, strength, dexterity, constitution, wisdom, intelligence, charisma)\
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)",('non-specific',0,0,0,0,0,0))
+    cursor.execute("INSERT INTO races (name)\
+                   VALUES (%s)",('non-specific',))
     db.commit()
 except:
     print('Races table already exists')
+
+try:
+    cursor.execute("CREATE TABLE classes (name VARCHAR(255), hitdie INT, BABTier VARCHAR(255), \
+                    fortitudeTier VARCHAR(255), reflexTier VARCHAR(255), willTier VARCHAR(255))")
+    db.commit()
+except:
+    print('Classes table already exists')
 
 
 cursor.execute("SHOW TABLES")

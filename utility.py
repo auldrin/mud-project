@@ -18,14 +18,15 @@ def REnumGet(number):
 PEnum = {'ID':0,
         'NAME':1,
         'PASSWORD':2,
-        'LOCATION':3,
-        'RACE':4,
-        'STRENGTH':5,
-        'DEXTERITY':6,
-        'CONSTITUTION':7,
-        'WISDOM':8,
-        'INTELLIGENCE':9,
-        'CHARISMA':10}
+        'XP':3,
+        'LOCATION':4,
+        'RACE':5,
+        'STRENGTH':6,
+        'DEXTERITY':7,
+        'CONSTITUTION':8,
+        'WISDOM':9,
+        'INTELLIGENCE':10,
+        'CHARISMA':11}
 
 RACEnum = {'NAME':0,
             'STRENGTH':1,
@@ -35,7 +36,15 @@ RACEnum = {'NAME':0,
             'INTELLIGENCE':5,
             'CHARISMA':6,
             'FEATBONUS':7,
-            'SIZE':8}
+            'SIZE':8,
+            'LEGS':9}
+
+CEnum = {'NAME':0,
+            'HITDIE':1,
+            'BABTIER':2,
+            'FORTITUDETIER':3,
+            'REFLEXTIER':4,
+            'WILLTIER':5}
 
 def reverseDirection(key):
     #For when you have a number corresponding to a direction, and want a number for the opposite direction

@@ -1,6 +1,7 @@
 import utility as u
 import random
 import room as r
+import settings as s
 
 def quit(player,message,room,cursor):
     try:
@@ -323,3 +324,32 @@ def characterSheet(player):
     #Other stuff?
     #send
     u.send(player.conn,message,player.key)
+
+def level(player,msg,cursor):
+    msg = msg.split()
+    #Check if the player has specified a class, and if that class exists
+    try:
+        cursor.execute('SELECT * FROM classes WHERE name = %s',(msg[1],))
+    except IndexError:
+        u.send(player.conn,'Level what class?',player.key)
+        return
+    c = cursor.fetchone()
+    if not c:
+        u.send(player.conn,'Class not found, try \'help classes\' for a full list of valid choices',player.key)
+        return
+    #Check if the player typed 'confirm'
+    try:
+        if not msg[2] == 'confirm':
+           u.send(player.conn,'Type \'level classname confirm\' to level',player.key)
+           return
+    except IndexError:
+        u.send(player.conn,'Type \'level classname confirm\' to level',player.key)
+        return
+    #Check if the player has enough xp (or hasn't chosen a starting class yet)
+    lvl = len(player.levels)
+    xpReq = (lvl * (lvl-1) * s.XP_CONSTANT) - (lvl-1 * (lvl-2) * s.XP_CONSTANT)
+    if lvl == 0 or player.xp >= xpReq:
+        print('level up')#apply all benefits of class in a function on the player, I think.
+    else:
+        u.send(player.conn,'XP requirements not met, you need ' + str(xpReq - player.xp) + ' more.',player.key)
+        return
