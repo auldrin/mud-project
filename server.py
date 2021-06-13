@@ -137,7 +137,7 @@ class Mob(BaseActor):
         #self.race = 'non-specific'
 
     def die(self,rooms):
-        rooms[self.location].broadcast(self.name+' falls to the ground, dead.',self)
+        rooms[self.location].broadcast(f"{self.name} falls to the ground, dead.",self)
         #TODO: Make this take into account that some levels are worth more than others - e.g fighter > warrior
         split = len(opponents)
         encounterRating = len(self.levels)+self.levelAdjustment
@@ -146,7 +146,7 @@ class Mob(BaseActor):
             xp += (300 * effectiveEnemyLevel * 2 ** ((encounterRating - effectiveEnemyLevel) * 0.5))/split
             e.xp += xp
             try:
-                u.send(e.conn,'You are awarded ' + str(xp) + '.',e.key)
+                u.send(e.conn,f"You are awarded {xp} xp.",e.key)
             except AttributeError:
                 #If this opponent was a mob, it doesn't have a connection or a key
                 pass
@@ -225,14 +225,14 @@ class Player(BaseActor):
                     for die in range(self.damage[key]):
                         damageTotal += random.randint(1,key)
                 damageTotal += self.attributesTotal['strength']//2 - 5
-                u.send(self.conn,'['+str(rollTotal)+','+str(damageTotal)+'] You hit ' + self.target.name + ' with your attack!',self.key)
-                u.send(self.target.conn,'['+str(rollTotal)+','+str(damageTotal)+'] '+self.name + ' lands a blow against you!',self.target.key)
-                rooms[self.location].broadcast(self.name+' lands a blow against '+self.target.name+'!',self,self.target)
+                u.send(self.conn,f"[{rollTotal},{damageTotal}] You hit {self.target.name} with your attack!",self.key)
+                u.send(self.target.conn,f"[{rollTotal},{damageTotal}] {self.name} lands a blow against you!",self.target.key)
+                rooms[self.location].broadcast(f"{self.name} lands a blow against {self.target.name}!",self,self.target)
                 self.target.takeDamage(damageTotal,self.damageType,self,rooms)
             else:
-                u.send(self.conn,'[' + str(rollTotal) + '] You miss ' + self.target.name + ' with your attack!',self.key)
-                u.send(self.target.conn,'['+str(rollTotal)+']'+self.name + ' misses you with their attack!',self.target.key)
-                rooms[self.location].broadcast(self.name+' misses '+self.target.name+' with an attack!',self,self.target)
+                u.send(self.conn,f"[{rollTotal}] You miss {self.target.name} with your attack!",self.key)
+                u.send(self.target.conn,f"[{rollTotal}] {self.name} misses you with their attack!",self.target.key)
+                rooms[self.location].broadcast(f"{self.name} misses {self.target.name} with an attack!",self,self.target)
             #Each attack has 5 less BAB than the previous, e.g fighter level 6 can attack twice with BAB +6/+1
             currentBaseAttackBonus -=5
             #Players with multiple attacks could easily end up killing their enemy in the middle of a flurry
@@ -240,8 +240,8 @@ class Player(BaseActor):
                 break
 
     def die(self,rooms):
-        rooms[self.location].broadcast(self.name+' falls to the ground, dead.',self)
-        u.send(self.conn,'You are dead!',key=self.key)
+        rooms[self.location].broadcast(f"{self.name} falls to the ground, dead.",self)
+        u.send(self.conn,f"You are dead!",key=self.key)
         u.leaveRoom(self,rooms[self.location],dead=True)
         u.enterRoom(self,rooms[1],None,True)
         self.health = self.maxHealth
@@ -557,7 +557,7 @@ while True:
                     connections[oldPlayer].conn = client
                     #Delete the old connection from connections list, but warn them first
                     try:
-                        send(oldPlayer,'You are being usurped by someone who knows your username and password. Sorry if it\'s not you',key=connections[oldPlayer].key)
+                        send(oldPlayer,"You are being usurped by someone who knows your username and password. Sorry if it's not you",key=connections[oldPlayer].key)
                     except:
                         pass
                     connections.pop(oldPlayer)
