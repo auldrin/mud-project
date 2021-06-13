@@ -178,7 +178,7 @@ def look(player,message,rooms):
 
 def chat(player,message,connectionList):
     message = message.partition(' ')[2]
-    message = '[CHAT] '+player.name+': '+message
+    message = f"[CHAT] {player.name}: {message}"
     for connection in connectionList:
         try:
             u.send(connection,message,player.key)
