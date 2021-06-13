@@ -37,7 +37,8 @@ RACEnum = {'NAME':0,
             'CHARISMA':6,
             'FEATBONUS':7,
             'SIZE':8,
-            'LEGS':9}
+            'LEGS':9,
+            'LEVELADJUSTMENT':10}
 
 CEnum = {'NAME':0,
             'HITDIE':1,

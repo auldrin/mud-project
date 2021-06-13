@@ -67,7 +67,7 @@ class BaseActor:
         self.attributesTotal = {}
         self.raceName = 'non-specific'
         #TODO: Add levelAdjustment to race database
-        self.levelAdjustment
+        self.levelAdjustment = 0
 
     def takeDamage(self,damage,dType,attacker,rooms):
         if dType == 'subdual':
@@ -143,7 +143,7 @@ class Mob(BaseActor):
         encounterRating = len(self.levels)+self.levelAdjustment
         for e in opponents:
             effectiveEnemyLevel = len(e.levels)+e.levelAdjustment
-            xp += (300 * effectiveEnemyLevel * 2 ^ ((encounterRating - effectiveEnemyLevel) * 0.5))/split
+            xp += (300 * effectiveEnemyLevel * 2 ** ((encounterRating - effectiveEnemyLevel) * 0.5))/split
             e.xp += xp
             try:
                 u.send(e.conn,'You are awarded ' + str(xp) + '.',e.key)
@@ -151,7 +151,6 @@ class Mob(BaseActor):
                 #If this opponent was a mob, it doesn't have a connection or a key
                 pass
         u.leaveRoom(self,rooms[self.location],dead=True)
-
 
 
 class Player(BaseActor):
@@ -193,7 +192,6 @@ class Player(BaseActor):
         self.size = race[u.RACEnum['SIZE']]
         self.legs = race[u.RACEnum['LEGS']]
         self.calculateBAB()
-
 
     def attack(self,rooms):
         try:
@@ -389,7 +387,7 @@ connections = {Server():None}
 loosePlayers = []
 idlePlayers = []
 rooms = {}
-commandList = ('look','kill','chat','tell','say','flee','me','dig','tele','link','editdesc','editname','quit','character','sheet','level')
+commandList = ('look','kill','chat','tell','say','flee','me','dig','tele','link','editdesc','editname','quit','character','sheet','level','who')
 
 ##### Loads the rooms from the database into a dictionary
 cursor.execute('SELECT * FROM rooms')
@@ -506,6 +504,8 @@ while True:
                 c.chat(connections[client],data,connections.keys())
             elif command == 'tell':
                 c.tell(connections[client],data,connections.values())
+            elif command == 'who':
+                c.who(connections[client],data,connections.values())
             elif command == 'look':
                 c.look(connections[client],data,rooms)
             elif command == 'character' or command == 'sheet':
@@ -517,7 +517,7 @@ while True:
             elif command == 'me':
                 c.me(connections[client],data,rooms)
             elif command == 'dig':
-                c.dig(rooms[connections[client].location],data,rooms,cursor)
+                c.dig(connections[client],data,rooms,cursor)
                 db.commit()
             elif command == 'tele':
                 c.tele(connections[client],data,rooms)

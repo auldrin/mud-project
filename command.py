@@ -23,13 +23,14 @@ def say(player,room,message):
     room.broadcast(newMessage,player)
     u.send(player.conn,'You say \''+message+'\'',player.key)
 
-def dig(room,message,rooms,cursor):
+def dig(player,message,rooms,cursor):
+    room = rooms[player.location]
     message = message.split()
     try:
         d = message[1]
         name = ' '.join(message[2:])
-    except KeyError:#
-        #Not ideal to provide no feedback here, but no other solution presents itself right now
+    except KeyError:
+        u.send(player.conn,'Incorrect usage, try: dig [n,e,s,w] New_Name',player.key)
         return
     desc = 'Default description'
     west, east, south, north, up, down = 0, 0, 0, 0, 0, 0
@@ -59,7 +60,6 @@ def dig(room,message,rooms,cursor):
     rooms[newID[0]] = r.Room(cursor.fetchone())
     #Set the appropriate direction in the previous room to connect to this new room
     cursor.execute('UPDATE rooms SET '+ d +' = %s WHERE id = %s',(newID[0],room.db[u.REnum['ID']]))
-    #db.commit()
     #Update the origin room to reflect the new link
     room.update(cursor)
 
@@ -234,7 +234,7 @@ def flee(player,message,rooms):
         elif player.inCombat:
             u.send(player.conn,'You successfully escaped.',player.key)
         else:
-            u.send(player.conn,'You successfully \'escaped\'.',player.key)
+            u.send(player.conn,"You successfully 'escaped'.",player.key)
     else:
         u.send(player.conn,'You fail to get away!',player.key)
 
@@ -257,11 +257,12 @@ def kill(player, message, rooms):
     elif not targetFound:
         u.send(player.conn,'There\'s nobody by that name here.',player.key)
         return
-    #check if room is a valid location for combat, I guess?
-    #
-    if player.target == target:
+    elif player.target == target:
         u.send(player.conn,'You\'re trying as hard as you can!',target.key)
         return
+    #check if room is a valid location for combat, I guess?
+    #
+
     #If they weren't already, both people are in combat now
     if not player.inCombat:
         player.initiativeTotal = player.initiativeBonus + random.randint(1,20)
@@ -269,7 +270,7 @@ def kill(player, message, rooms):
     if not target.inCombat:
         target.initiativeTotal = target.initiativeBonus + random.randint(1,20)
         target.inCombat = True
-
+    #Whoever issued the command is targetting the target (obviously), but the target may already have a target
     player.target = target
     if not target.target:
         target.target = player
@@ -305,20 +306,18 @@ def lookAtPlayer(viewer, target):
     u.send(viewer.conn,message,viewer.key)
 
 def characterSheet(player):
-    #The name
-    message = 'You are ' + player.name
-    #The race
     if player.race[0] in 'aeio':
-        message += ', an '
+        racial_article = 'an'
     else:
-        message += ', a '
-    message += player.race + '.\n'
+        racial_article = 'a'
+    #The name and race
+    message = f'You are {player.name}, {racial_article} {player.race}.\n'
     #level/class?
     #Health
-    message += 'Hitpoints: ' + str(player.health) + '/' + str(player.maxHealth)
+    message += f'Hitpoints: {player.health}/{player.maxHealth}.'
     #Attributes
     for attr in player.attributes.keys():
-        message += '\n' + attr + ': ' + str(player.attributesTotal[attr])
+        message += f'\n {attr}: {player.attributesTotal[attr]}'
     #Saves
     #Skills
     #Other stuff?
@@ -335,15 +334,15 @@ def level(player,msg,cursor):
         return
     c = cursor.fetchone()
     if not c:
-        u.send(player.conn,'Class not found, try \'help classes\' for a full list of valid choices',player.key)
+        u.send(player.conn,"Class not found, try 'help classes' for a full list of valid choices",player.key)
         return
     #Check if the player typed 'confirm'
     try:
         if not msg[2] == 'confirm':
-           u.send(player.conn,'Type \'level classname confirm\' to level',player.key)
+           u.send(player.conn,"Type 'level classname confirm' to level",player.key)
            return
     except IndexError:
-        u.send(player.conn,'Type \'level classname confirm\' to level',player.key)
+        u.send(player.conn,"Type 'level classname confirm' to level",player.key)
         return
     #Check if the player has enough xp (or hasn't chosen a starting class yet)
     lvl = len(player.levels)
@@ -353,3 +352,14 @@ def level(player,msg,cursor):
     else:
         u.send(player.conn,'XP requirements not met, you need ' + str(xpReq - player.xp) + ' more.',player.key)
         return
+
+def who(player,message,playerList):
+    reply = 'Online Players\n-------------'
+    for p in playerList:
+        try:
+            reply += '\n' + p.name + ', ' + p.raceName
+        except AttributeError:
+            #First entry in playerList is actually the server, which will cause an error
+            continue
+    u.send(player.conn,reply,player.key)
+

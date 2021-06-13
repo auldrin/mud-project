@@ -9,7 +9,7 @@ from Crypto.Random import get_random_bytes
 import tkinter as tk
 from tkinter import font as tkFont
 
-HOST = '192.168.2.15'
+HOST = '192.168.2.13'
 
 PORT = 1024
 HEADER_LENGTH = 10
