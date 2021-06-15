@@ -621,7 +621,7 @@ while True:
             elif command == "kill":
                 c.kill(connections[client], data, rooms)
             elif command == "chat":
-                c.chat(connections[client], data, connections.keys())
+                c.chat(connections[client], data, connections.values())
             elif command == "tell":
                 c.tell(connections[client], data, connections.values())
             elif command == "who":

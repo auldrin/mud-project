@@ -3,6 +3,32 @@ import random
 import room as r
 import settings as s
 
+class Controller:
+    def __init__(self, rooms, cursor, playerList):
+        self.commandList = {}
+        self.commandList["chat"] = Chat(playerList)
+
+    def execute(self, player, message):
+        for key in self.commandList.keys():
+            if key.startswith(message.split()[0]):
+                self.commandList[key].execute(player, message)
+                return
+        u.send(player.conn,"Do what? (Try typing 'help')",player.key)
+
+
+class Chat:
+    def __init__(self, playerList):
+        self.playerList = playerList
+
+    def execute(self, player, message):
+        message = message.partition(" ")[2]
+        message = f"[CHAT] {player.name}: {message}"
+        for recipient in self.playerList:
+            try:
+                u.send(recipient.conn, message, recipient.key)
+            except TypeError:
+                # Will always happen when the server tries to send to itself.
+                continue
 
 def quit(player, message, room, cursor):
     try:
@@ -100,20 +126,20 @@ def link(player, message, rooms, cursor):
     try:
         message = message.lower()
         message = message.split()
-        d = message[1]
-        t = message[2]
-    except (AttributeError, TypeError, KeyError):
+        direction = message[1]
+        target = message[2]
+    except (AttributeError, TypeError, KeyError, IndexError):
         u.send(player.conn, "Invalid usage, try: 'link west 1' format instead.", player.key)
         return
 
-    key = u.convertStringToRoomEnum(d)
+    key = u.convertStringToRoomEnum(direction)
     if not key:
         u.send(player.conn, "Direction invalid", player.key)
     try:
         cursor.execute(
-            "UPDATE rooms SET " + d + " = %s WHERE id = %s",
+            "UPDATE rooms SET " + direction + " = %s WHERE id = %s",
             (
-                t,
+                target,
                 player.location,
             ),
         )
@@ -226,13 +252,16 @@ def look(player, message, rooms):
     u.send(player.conn, message, player.key)
 
 
-def chat(player, message, connectionList):
+def chat(player, message, playerList):
     message = message.partition(" ")[2]
     message = f"[CHAT] {player.name}: {message}"
-    for connection in connectionList:
+    print(playerList)
+    print(message)
+    for recipient in playerList:
         try:
-            u.send(connection, message, player.key)
-        except AttributeError:  # Will always happen when the server tries to send to itself.
+            u.send(recipient.conn, message, recipient.key)
+        except AttributeError:
+            # Will always happen when the server tries to send to itself.
             continue
 
 
@@ -256,7 +285,8 @@ def tell(player, message, playerList):
                 u.send(p.conn, sentContent, p.key)
                 u.send(player.conn, returnedContent, player.key)
                 return
-        except AttributeError:  # Will always happen when the server tries to send to itself.
+        except AttributeError:
+            # Will always happen when the server tries to send to itself.
             continue
     u.send(player.conn, "Player not found", player.key)
     return
@@ -269,6 +299,7 @@ def flee(player, message, rooms):
         if rooms[player.location].db[direction]:
             options.append((rooms[player.location].db[direction], index))
     if not options:
+        # In the unlikely(?) event the player is trapped in a room with no exits
         u.send(player.conn, "There is nowhere to flee.", player.key)
         return
     # Check success
@@ -320,7 +351,6 @@ def kill(player, message, rooms):
         return
     # check if room is a valid location for combat, I guess?
     #
-
     # If they weren't already, both people are in combat now
     if not player.inCombat:
         player.initiativeTotal = player.initiativeBonus + random.randint(1, 20)
@@ -328,7 +358,7 @@ def kill(player, message, rooms):
     if not target.inCombat:
         target.initiativeTotal = target.initiativeBonus + random.randint(1, 20)
         target.inCombat = True
-    # Whoever issued the command is targetting the target (obviously), but the target may already have a target
+    # Whoever issued the command should target the target (obviously), but the target may already have a target
     player.target = target
     if not target.target:
         target.target = player
@@ -359,12 +389,12 @@ def lookAtPlayer(viewer, target):
     else:
         racial_article = "a"
     if target.inCombat:
-        message = f"{target.name} is locked in battle against {target.target.name}\n"
+        output = f"{target.name} is locked in battle against {target.target.name}\n"
     else:
-        message = f"{target.name} is standing here.\n"
-    message += f"{target.name} is {racial_article} {target.race}.\n"
-    message += f"{target.name} is {target.healthCheck()}."
-    u.send(viewer.conn, message, viewer.key)
+        output = f"{target.name} is standing here.\n"
+    output += f"{target.name} is {racial_article} {target.race}.\n"
+    output += f"{target.name} is {target.healthCheck()}."
+    u.send(viewer.conn, output, viewer.key)
 
 
 def characterSheet(player):
@@ -373,18 +403,18 @@ def characterSheet(player):
     else:
         racial_article = "a"
     # The name and race
-    message = f"You are {player.name}, {racial_article} {player.race}.\n"
+    output = f"You are {player.name}, {racial_article} {player.race}.\n"
     # level/class?
     # Health
-    message += f"Hitpoints: {player.health}/{player.maxHealth}."
+    output += f"Hitpoints: {player.health}/{player.maxHealth}."
     # Attributes
     for attr in player.attributes.keys():
-        message += f"\n {attr}: {player.attributesTotal[attr]}"
+        output += f"\n {attr}: {player.attributesTotal[attr]}"
     # Saves
     # Skills
     # Other stuff?
     # send
-    u.send(player.conn, message, player.key)
+    u.send(player.conn, output, player.key)
 
 
 def level(player, msg, cursor):
@@ -428,11 +458,11 @@ def level(player, msg, cursor):
 
 
 def who(player, message, playerList):
-    reply = "Online Players\n-------------"
+    output = "Online Players\n-------------"
     for p in playerList:
         try:
-            reply += f"\n{p.name}, {p.raceName}"
+            output += f"\n{p.name}, {p.raceName}"
         except AttributeError:
             # First entry in playerList is actually the server, which will cause an error
             continue
-    u.send(player.conn, reply, player.key)
+    u.send(player.conn, output, player.key)
