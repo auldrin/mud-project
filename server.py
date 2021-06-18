@@ -461,43 +461,11 @@ def verification(msg, player):
             verification[1] = 0
     return verification
 
-
-def parseCommand(msg):
-    msg = msg.lower()
-    if all([char in ["n", "e", "w", "s", "u", "d"] for char in msg]):
-        return "multimove"
-    elif msg in ("north", "east", "south", "west", "up", "down"):
-        return "move"
-    msg = msg.split()[0]
-    for command in commandList:
-        if command.startswith(msg):
-            return command
-    return None
-
-
 connections = {Server(): None}
 loosePlayers = []
 idlePlayers = []
 rooms = {}
-commandList = (
-    "look",
-    "kill",
-    "chat",
-    "tell",
-    "say",
-    "flee",
-    "me",
-    "dig",
-    "tele",
-    "link",
-    "editdesc",
-    "editname",
-    "quit",
-    "character",
-    "sheet",
-    "level",
-    "who",
-)
+controller = c.Controller(rooms,cursor,connections)
 
 ##### Loads the rooms from the database into a dictionary
 cursor.execute("SELECT * FROM rooms")
@@ -613,63 +581,7 @@ while True:
         # If the player is fully logged in, parse and handle their command
         if isinstance(connections[client], Player):
             connections[client].timer = 0.0
-            command = parseCommand(data)
-            if command == "move":
-                c.move(connections[client], data, rooms)
-            elif command == "multimove":
-                c.move(connections[client], data, rooms, True)
-            elif command == "kill":
-                c.kill(connections[client], data, rooms)
-            elif command == "chat":
-                c.chat(connections[client], data, connections.values())
-            elif command == "tell":
-                c.tell(connections[client], data, connections.values())
-            elif command == "who":
-                c.who(connections[client], data, connections.values())
-            elif command == "look":
-                c.look(connections[client], data, rooms)
-            elif command == "character" or command == "sheet":
-                c.characterSheet(connections[client])
-            elif command == "say":
-                c.say(connections[client], rooms[connections[client].location], data)
-            elif command == "flee":
-                c.flee(connections[client], data, rooms)
-            elif command == "me":
-                c.me(connections[client], data, rooms)
-            elif command == "dig":
-                c.dig(connections[client], data, rooms, cursor)
-                db.commit()
-            elif command == "tele":
-                c.tele(connections[client], data, rooms)
-            elif command == "link":
-                c.link(connections[client], data, rooms, cursor)
-                db.commit()
-            elif command == "editdesc":
-                c.editDesc(
-                    connections[client],
-                    data,
-                    rooms[connections[client].location],
-                    cursor,
-                )
-                db.commit()
-            elif command == "editname":
-                c.editName(
-                    connections[client],
-                    data,
-                    rooms[connections[client].location],
-                    cursor,
-                )
-                db.commit()
-            elif command == "quit":
-                c.quit(
-                    connections[client],
-                    data,
-                    rooms[connections[client].location],
-                    cursor,
-                )
-                db.commit()
-            elif command == "level":
-                c.level(connections[client], data, cursor)
+            controller.execute(connections[client], data)
             continue
         ###################################################################
         # If the player is unverified, attempt to verify them using their input
@@ -761,7 +673,6 @@ while True:
             except KeyError:
                 # indicates the room the player logged out in no longer exists
                 u.enterRoom(connections[client], rooms[1])
-            c.look(connections[client], "", rooms)
         elif (
             connections[client][0] != 0
             and connections[client][1] != 0

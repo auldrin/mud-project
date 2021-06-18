@@ -179,3 +179,10 @@ def leaveRoom(player,room,direction=None,flee=None,dead=None):
         message += ' has vanished.'
     room.broadcast(message)
     return
+
+def checkForMultiMove(message):
+    word = message.split()[0]
+    if all([char in ["n", "e", "w", "s", "u", "d"] for char in word]):
+        return True
+    else:
+        return False
