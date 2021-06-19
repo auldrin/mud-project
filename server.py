@@ -354,8 +354,7 @@ def receive(sock, RSA=False, BYTES=False, key=None):
     while bytes_recd < HEADER_LENGTH:
         chunk = sock.recv(min(HEADER_LENGTH - bytes_recd, HEADER_LENGTH))
         if chunk == b"":
-            print("Runtime error")
-            raise RuntimeError("Socket closed during reading")
+            raise ConnectionResetError("Socket closed during reading")
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
     # reassemble and decode header
@@ -368,7 +367,7 @@ def receive(sock, RSA=False, BYTES=False, key=None):
     while bytes_recd < length:
         chunk = sock.recv(min(length - bytes_recd, length))
         if chunk == b"":
-            raise RuntimeError("Socket closed during reading")
+            raise ConnectionResetError("Socket closed during reading")
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
     data = b"".join(chunks)
@@ -465,7 +464,7 @@ connections = {Server(): None}
 loosePlayers = []
 idlePlayers = []
 rooms = {}
-controller = c.Controller(rooms,cursor,connections)
+controller = c.Controller(rooms,cursor,connections.values())
 
 ##### Loads the rooms from the database into a dictionary
 cursor.execute("SELECT * FROM rooms")
@@ -562,15 +561,14 @@ while True:
         # If the client is an actual player, receive the data
         try:
             try:
-                if not connections[client][
-                    4
-                ]:  # If the player is a verification tuple, 4 will be none or an AES key.
+                if not connections[client][4]:
+                    # If the player is a verification tuple, 4 will be none or an AES key.
                     data = receive(client, RSA=True, BYTES=True)
                 else:
                     data = receive(client, key=connections[client][4])
             except TypeError:
                 data = receive(client, key=connections[client].key)
-        except RuntimeError:
+        except ConnectionResetError:
             print("Disconnected player due to exception when receiving data")
             if isinstance(connections[client], Player):
                 loosePlayers.append(connections[client])

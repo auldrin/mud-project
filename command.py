@@ -493,54 +493,50 @@ class Level:
     def __init__(self, cursor):
         self.cursor = cursor
 
-    def execute(player, message):
+    def execute(self, player, message):
         message = message.split()
-        # Check if the player has specified a class, and if that class exists
+        # Check if the player has specified a class
         try:
-            cursor.execute("SELECT * FROM classes WHERE name = %s", (message[1],))
+            self.cursor.execute("SELECT * FROM classes WHERE name = %s", (message[1],))
         except IndexError:
             u.send(player.conn, "Gain a level in which class?", player.key)
             return
-        c = cursor.fetchone()
+        #Check if the chosen class is real
+        c = self.cursor.fetchone()
         if not c:
-            u.send(
-                player.conn,
+            u.send(player.conn,
                 "Class not found, try 'help classes' for a full list of valid choices",
-                player.key,
-            )
+                player.key)
             return
         # Check if the player typed 'confirm'
         try:
             if not message[2] == "confirm":
-                u.send(player.conn, "Type 'level [class] confirm' to level", player.key)
+                u.send(player.conn, f"Type 'level {c[0]} confirm' to level", player.key)
                 return
         except IndexError:
-            u.send(player.conn, "Type 'level [class] confirm' to level", player.key)
+            u.send(player.conn, f"Type 'level {c[0]} confirm' to level", player.key)
             return
         # Check if the player has enough xp (or hasn't chosen a starting class yet)
         lvl = len(player.levels)
         xpReq = (lvl * (lvl - 1) * s.XP_CONSTANT) - (lvl - 1 * (lvl - 2) * s.XP_CONSTANT)
         if lvl == 0 or player.xp >= xpReq:
-            print(
-                "level up"
-            )  # apply all benefits of class in a function on the player, I think.
+            print("level up")
+            # TODO: apply all benefits of class in a function on the player, or something
         else:
-            u.send(
-                player.conn,
+            u.send(player.conn,
                 f"XP requirements not met, you need {xpReq - player.xp} more.",
-                player.key,
-            )
+                player.key)
             return
 
 class Who:
     def __init__(self, playerList):
         self.playerList = playerList
 
-    def execute(player, message):
+    def execute(self, player, message):
         output = "Online Players\n-------------"
         for p in self.playerList:
             try:
-                output += f"\n{p.name}, {p.raceName}"
+                output += f"\n{p.name}, {p.race}"
             except AttributeError:
                 # First entry in playerList is actually the server, which will cause an error
                 continue
