@@ -28,18 +28,11 @@ PRIVATE_KEY = rsa.PrivateKey(
     privatekey.PRIVATE_KEY[4],
 )
 
-db = mysql.connector.connect(
-    host="localhost", user="root", password="admin", database="mydatabase"
-)
-cursor = db.cursor()
-
-
 class Item:
     def __init__(self, name):
         self.name = name
         # TODO: get item details from database using name
         self.weight = 1.0
-
 
 class Weapon(Item):
     def __init__(self, name):
@@ -48,10 +41,8 @@ class Weapon(Item):
         self.damage = {6: 2}
         self.damageType = "slashing"
 
-
 def getInit(actor):
     return actor.initiativeTotal
-
 
 class BaseActor:
     def __init__(self, name):
@@ -460,6 +451,69 @@ def verification(msg, player):
             verification[1] = 0
     return verification
 
+def markIdlePlayers(connections, timeSinceFrame):
+    idlePlayers = []
+    for conn in connections:
+        # Collect any idle connected players, put them in idlePlayers, don't remove from connections yet because iterator
+        if isinstance(conn, Server):
+            continue
+        try:
+            # Unverified players use entry 3 as their timeout
+            timer = connections[conn][3] + timeSinceFrame
+            connections[conn][3] = timer
+        except TypeError:
+            # Verified players use player.timer
+            timer = connections[conn].timer + timeSinceFrame
+            connections[conn].timer = timer
+        if timer > IDLE_TIMER:
+            idlePlayers.append(conn)
+    return idlePlayers
+
+def purgeIdlePlayers(idlePlayers, connections, cursor, db):
+    #Uploads any logged-in players to the database, then disconnects them. Disconnects non-logged in connections too.
+    while idlePlayers:
+        playerObject = connections[idlePlayers[0]]
+        try:  # Try to treat them like real players, which will fail if they're unverified.
+            playerObject.upload(cursor)
+            db.commit()
+            print("Idle player", playerObject.name, "saved to database")
+            u.leaveRoom(playerObject, rooms[playerObject.location])
+        except AttributeError:
+            print("Unverified player disconnected")
+        idlePlayers[0].close()
+        connections.pop(idlePlayers[0])
+        idlePlayers.pop(0)
+        del playerObject
+
+def purgeIdleLoosePlayers(idlePlayers, cursor, db):
+    # Purge the players who are both loose and idle
+    while idlePlayers:
+        idlePlayers[0].upload(cursor)
+        db.commit()
+        print("Idle player", idlePlayers[0].name, "saved to database")
+        u.leaveRoom(idlePlayers[0], rooms[idlePlayers[0].location])
+        idlePlayers.pop(0)
+
+def markLooseIdlePlayers(loosePlayers, timeSinceFrame):
+    #Iterates through a list of player objects
+    #transfers any which have been idle too long to a new list
+    #returns the new list
+    i = 0
+    idlePlayers = []
+    while i < len(loosePlayers):
+        loosePlayers[i].timer = loosePlayers[i].timer + timeSinceFrame
+        if loosePlayers[i].timer > IDLE_TIMER:
+            idlePlayers.append(loosePlayers[i])
+            loosePlayers.pop(i)
+        else:
+            i = i + 1
+    return idlePlayers
+
+db = mysql.connector.connect(
+    host="localhost", user="root", password="admin", database="mydatabase"
+)
+cursor = db.cursor()
+
 connections = {Server(): None}
 loosePlayers = []
 idlePlayers = []
@@ -495,57 +549,13 @@ while True:
                 if player.inCombat:
                     print(player.name, player.initiativeTotal)
                     player.attack(rooms)
+    #Finds any clients in the connections list who haven't acted recently, then disconnects them all
+    idlePlayers = markIdlePlayers(connections, timeSinceFrame)
+    purgeIdlePlayers(idlePlayers, connections, cursor, db)
 
-    for (
-        conn
-    ) in (
-        connections
-    ):  # Collect any idle connected players, put them in idlePlayers, don't remove from connections yet because iterator
-        if isinstance(conn, Server):
-            continue
-        try:
-            # Unverified players use entry 3 as their timeout
-            timer = connections[conn][3] + timeSinceFrame
-            connections[conn][3] = timer
-        except TypeError:
-            # Verified players use player.timer
-            timer = connections[conn].timer + timeSinceFrame
-            connections[conn].timer = timer
-        if timer > IDLE_TIMER:
-            idlePlayers.append(conn)
-
-    while idlePlayers:  # Purge the list
-        try:  # Try to treat them like real players, which will fail if they're unverified.
-            idleP = connections[idlePlayers[0]]
-            idleP.upload(cursor)
-            db.commit()
-            print("Idle player", idleP.name, "saved to database")
-            u.leaveRoom(idleP, rooms[idleP.location])
-        except AttributeError:
-            print("Unverified player disconnected")
-        idlePlayers[0].close()
-        connections.pop(idlePlayers[0])
-        idlePlayers.pop(0)
-        del idleP
-
-    i = 0
-    while i < len(
-        loosePlayers
-    ):  # Check each loose player, put them in idlePlayers if they are idle, remove from loosePlayers
-        loosePlayers[i].timer = loosePlayers[i].timer + timeSinceFrame
-        if loosePlayers[i].timer > IDLE_TIMER:
-            idlePlayers.append(loosePlayers[i])
-            loosePlayers.pop(i)
-        else:
-            i = i + 1
-    del i
-
-    while idlePlayers:  # Purge the players who are both loose and idle
-        idlePlayers[0].upload(cursor)
-        db.commit()
-        print("Idle player", idlePlayers[0].name, "saved to database")
-        u.leaveRoom(idlePlayers[0], rooms[idlePlayers[0].location])
-        idlePlayers.pop(0)
+    #Deletes any loose player objects which have existed for too long
+    idlePlayers = markLooseIdlePlayers(loosePlayers, timeSinceFrame)
+    purgeIdleLoosePlayers(idlePlayers, cursor, db)
 
     incomingS, outgoingS, errorS = select.select(
         connections.keys(), connections.keys(), connections.keys(), 0.05
@@ -572,7 +582,7 @@ while True:
             print("Disconnected player due to exception when receiving data")
             if isinstance(connections[client], Player):
                 loosePlayers.append(connections[client])
-                print("Added player to loosePlayers list")
+                print(f"Added {connections[client].name} to loosePlayers list")
             connections.pop(client)
             continue
         ###################################################################
@@ -628,29 +638,23 @@ while True:
                         key=connections[client].key,
                     )
                     break
-            if (
-                not foundPlayer
-            ):  # If the player wasn't in the main list, check if they're in the loose player list
+            if (not foundPlayer):
+                # If the player wasn't in the main list, check if they're in the loose player list
                 for looseP in loosePlayers:
                     if looseP.name == connections[client][0]:
-                        looseP.key = connections[client][
-                            4
-                        ]  # Replace the old body's encryption key with the new one
-                        connections[
-                            client
-                        ] = looseP  # Replace the new connection's verification tuple with the old body
-                        looseP.conn = (
-                            client  # Tell the old body about its new connection
-                        )
-                        loosePlayers.remove(
-                            looseP
-                        )  # Remove the body from loose players
+                        # Replace the old body's encryption key with the new one
+                        looseP.key = connections[client][4]
+                        # Replace the new connection's verification tuple with the old body
+                        connections[client] = looseP
+                        # Tell the old body about its new connection
+                        looseP.conn = (client)
+                        # Remove the body from loose players
+                        loosePlayers.remove(looseP)
                         connectedToExisting = True
                         print("Player being connected to loose body")
                         print(connections[client])
                         rooms[connections[client].location].broadcast(
-                            connections[client].name
-                            + "'s soul has returned to their body.",
+                            f"{connections[client].name}'s soul has returned to their body.",
                             connections[client],
                         )
                         u.send(
@@ -660,22 +664,23 @@ while True:
                         )
                         break
             if connectedToExisting:
-                break
+                continue
             connections[client] = Player(
                 connections[client][0], client, connections[client][4]
-            )  # Make a new player with the verified name
+            )  # Make a new player object with the verified name
             connections[client].download(cursor)
-            print("Verified existing player " + connections[client].name)
+            print(f"Verified existing player {connections[client].name}")
             try:
                 u.enterRoom(connections[client], rooms[connections[client].location])
             except KeyError:
                 # indicates the room the player logged out in no longer exists
                 u.enterRoom(connections[client], rooms[1])
         elif (
+            # A new player looks like ['Auldrin',admin,admin,0]
             connections[client][0] != 0
             and connections[client][1] != 0
             and connections[client][2] != 0
-        ):  # A new player looks like ['Auldrin',admin,admin,0]
+        ):
             cursor.execute(
                 "INSERT INTO players (name, password) VALUES (%s, %s)",
                 (connections[client][0].capitalize(), connections[client][1]),
@@ -685,5 +690,5 @@ while True:
                 connections[client][0], client, connections[client][4]
             )
             connections[client].download(cursor)
-            print("Verified new player ", connections[client].name)
+            print(f"Verified new player {connections[client].name}")
             u.enterRoom(connections[client], rooms[connections[client].location])
